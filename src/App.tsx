@@ -7,6 +7,7 @@ import {
   PanelLeftOpen, Pencil, Printer, RefreshCw, Save, Search, Trash2, X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { FormEvent } from 'react'
 import { FileTree } from './components/FileTree'
 import { MarkdownPreview } from './components/MarkdownPreview'
 import { RawEditor } from './components/RawEditor'
@@ -25,15 +26,23 @@ function App() {
   const state = useAppStore()
   const [sidebarVisible, setSidebarVisible] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [itemDialog, setItemDialog] = useState<{
+    action: 'file' | 'folder' | 'rename'
+    value: string
+  } | null>(null)
   const fileMenuRef = useRef<HTMLDivElement>(null)
   const active = state.documents.find((document) => document.path === state.activePath) || null
 
   const refresh = useCallback(async () => {
     if (!state.root) return
+    setRefreshing(true)
     try {
       state.set({ entries: await api.list(state.root) })
     } catch (error) {
       await message(String(error), { title: 'Unable to refresh folder', kind: 'error' })
+    } finally {
+      setRefreshing(false)
     }
   }, [state.root, state.set])
 
@@ -115,21 +124,23 @@ function App() {
     return true
   }, [saveDocument])
 
-  const performItemAction = async (action: 'file' | 'folder' | 'rename' | 'duplicate' | 'trash') => {
+  const performItemAction = async (
+    action: 'file' | 'folder' | 'rename' | 'duplicate' | 'trash',
+    suppliedName?: string,
+  ) => {
     if (!state.root) return
     const selected = state.entries.find((entry) => entry.path === state.selectedPath)
     const parent = selected?.isDir ? selected.path : selected ? dirname(selected.path) : state.root
     try {
       if (action === 'file' || action === 'folder') {
-        const suggested = action === 'file' ? 'untitled.md' : 'New Folder'
-        const name = window.prompt(action === 'file' ? 'New Markdown file name' : 'New folder name', suggested)
+        const name = suppliedName?.trim()
         if (!name) return
         const finalName = action === 'file' && !isMarkdown(name) ? `${name}.md` : name
         await invoke('create_item', { root: state.root, path: `${parent}/${finalName}`, directory: action === 'folder' })
         await refresh()
         if (action === 'file') await openDocument(`${parent}/${finalName}`)
       } else if (action === 'rename' && selected) {
-        const name = window.prompt('Rename item', selected.name)
+        const name = suppliedName?.trim()
         if (!name || name === selected.name) return
         const newPath = await invoke<string>('rename_item', { root: state.root, path: selected.path, newName: name })
         const documents = state.documents.map((document) => {
@@ -172,6 +183,24 @@ function App() {
     } catch (error) {
       await message(String(error), { title: 'Unable to move item', kind: 'error' })
     }
+  }
+
+  const openItemDialog = (action: 'file' | 'folder' | 'rename') => {
+    const selected = state.entries.find((entry) => entry.path === state.selectedPath)
+    if (action === 'rename' && !selected) return
+    setMenuOpen(false)
+    setItemDialog({
+      action,
+      value: action === 'file' ? 'untitled.md' : action === 'folder' ? 'New Folder' : selected!.name,
+    })
+  }
+
+  const submitItemDialog = (event: FormEvent) => {
+    event.preventDefault()
+    if (!itemDialog?.value.trim()) return
+    const pending = itemDialog
+    setItemDialog(null)
+    void performItemAction(pending.action, pending.value)
   }
 
   useEffect(() => {
@@ -294,14 +323,14 @@ function App() {
             <div className="sidebar-header">
               <span>FILES</span>
               <div>
-                <button onClick={() => void performItemAction('file')} disabled={!state.root} title="New Markdown file"><FilePlus2 size={15} /></button>
-                <button onClick={() => void performItemAction('folder')} disabled={!state.root} title="New folder"><FolderPlus size={15} /></button>
-                <button onClick={() => void refresh()} disabled={!state.root} title="Refresh"><RefreshCw size={15} /></button>
+                <button onClick={() => openItemDialog('file')} disabled={!state.root} title="New Markdown file"><FilePlus2 size={15} /></button>
+                <button onClick={() => openItemDialog('folder')} disabled={!state.root} title="New folder"><FolderPlus size={15} /></button>
+                <button onClick={() => void refresh()} disabled={!state.root || refreshing} title={refreshing ? 'Refreshing…' : 'Refresh files'}><RefreshCw className={refreshing ? 'spinning' : ''} size={15} /></button>
                 <div className="file-actions" ref={fileMenuRef}>
-                  <button onClick={() => setMenuOpen(!menuOpen)} disabled={!state.selectedPath} title="File actions" aria-expanded={menuOpen}><MoreHorizontal size={15} /></button>
+                  <button onClick={() => setMenuOpen(!menuOpen)} disabled={!state.selectedPath} title={state.selectedPath ? 'Actions for selected item' : 'Select a file or folder for more actions'} aria-expanded={menuOpen}><MoreHorizontal size={15} /></button>
                   {menuOpen && (
                     <div className="file-menu">
-                      <button onClick={() => { setMenuOpen(false); void performItemAction('rename') }}><Pencil size={14} /> Rename</button>
+                      <button onClick={() => openItemDialog('rename')}><Pencil size={14} /> Rename</button>
                       <button onClick={() => { setMenuOpen(false); void performItemAction('duplicate') }}><Copy size={14} /> Duplicate</button>
                       <button className="danger" onClick={() => { setMenuOpen(false); void performItemAction('trash') }}><Trash2 size={14} /> Move to Trash</button>
                     </div>
@@ -426,6 +455,33 @@ function App() {
       </section>
       {active && <footer className="statusbar"><span>{active.path}</span><span>{active.content.split(/\s+/).filter(Boolean).length.toLocaleString()} words · {active.content.split('\n').length.toLocaleString()} lines</span></footer>}
       <div className="print-document">{active && <MarkdownPreview content={active.content} path={active.path} onOpenMarkdown={() => {}} />}</div>
+      {itemDialog && (
+        <div className="dialog-backdrop" role="presentation" onPointerDown={() => setItemDialog(null)}>
+          <form className="item-dialog" onSubmit={submitItemDialog} onPointerDown={(event) => event.stopPropagation()}>
+            <h2>{itemDialog.action === 'file' ? 'New Markdown File' : itemDialog.action === 'folder' ? 'New Folder' : 'Rename Item'}</h2>
+            <label htmlFor="item-name">Name</label>
+            <input
+              id="item-name"
+              autoFocus
+              value={itemDialog.value}
+              onChange={(event) => setItemDialog({ ...itemDialog, value: event.target.value })}
+              onFocus={(event) => {
+                const dot = event.currentTarget.value.lastIndexOf('.')
+                event.currentTarget.setSelectionRange(0, dot > 0 ? dot : event.currentTarget.value.length)
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') setItemDialog(null)
+              }}
+            />
+            <div className="dialog-actions">
+              <button type="button" onClick={() => setItemDialog(null)}>Cancel</button>
+              <button type="submit" className="primary" disabled={!itemDialog.value.trim()}>
+                {itemDialog.action === 'rename' ? 'Rename' : 'Create'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </main>
   )
 }
