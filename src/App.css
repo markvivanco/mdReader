@@ -22,10 +22,11 @@
 .sidebar { position: relative; flex: none; min-width: 220px; max-width: 520px; background: var(--panel); border-right: 1px solid var(--border); overflow: hidden; }
 .sidebar-header { position: relative; height: 38px; padding: 0 8px 0 13px; display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
 .sidebar-header > div { display: flex; }
+.file-actions { position: relative; display: flex; }
 .sidebar-header button, .plain-icon { border: 0; background: transparent; border-radius: 5px; width: 27px; height: 27px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
 .sidebar-header button:hover, .plain-icon:hover { background: #e1e1dd; }
 .sidebar-header button:disabled { opacity: .3; }
-.file-menu { position: absolute; z-index: 20; right: 8px; top: 34px; width: 170px; padding: 5px; display: grid !important; border: 1px solid var(--border); border-radius: 9px; background: white; box-shadow: 0 10px 26px rgba(0,0,0,.13); }
+.file-menu { position: absolute; z-index: 20; right: 0; top: 30px; width: 170px; padding: 5px; display: grid !important; border: 1px solid var(--border); border-radius: 9px; background: white; box-shadow: 0 10px 26px rgba(0,0,0,.13); }
 .file-menu button { width: 100%; justify-content: flex-start; gap: 8px; padding: 0 8px; font-size: 13px; font-weight: 500; letter-spacing: normal; }
 .file-menu .danger { color: #b93128; }
 .file-tree { height: calc(100% - 38px); overflow: auto; padding: 2px 7px 20px; }

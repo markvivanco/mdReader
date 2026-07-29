@@ -6,7 +6,7 @@ import {
   Copy, FilePlus2, FileText, FolderOpen, FolderPlus, MoreHorizontal, PanelLeftClose,
   PanelLeftOpen, Pencil, Printer, RefreshCw, Save, Search, Trash2, X,
 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FileTree } from './components/FileTree'
 import { MarkdownPreview } from './components/MarkdownPreview'
 import { RawEditor } from './components/RawEditor'
@@ -25,6 +25,7 @@ function App() {
   const state = useAppStore()
   const [sidebarVisible, setSidebarVisible] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
+  const fileMenuRef = useRef<HTMLDivElement>(null)
   const active = state.documents.find((document) => document.path === state.activePath) || null
 
   const refresh = useCallback(async () => {
@@ -174,6 +175,22 @@ function App() {
   }
 
   useEffect(() => {
+    if (!menuOpen) return
+    const dismissMenu = (event: PointerEvent) => {
+      if (!fileMenuRef.current?.contains(event.target as Node)) setMenuOpen(false)
+    }
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false)
+    }
+    window.addEventListener('pointerdown', dismissMenu, true)
+    window.addEventListener('keydown', dismissOnEscape)
+    return () => {
+      window.removeEventListener('pointerdown', dismissMenu, true)
+      window.removeEventListener('keydown', dismissOnEscape)
+    }
+  }, [menuOpen])
+
+  useEffect(() => {
     if (!state.root || !state.searchQuery.trim()) {
       state.set({ searchResults: [] })
       return
@@ -280,15 +297,18 @@ function App() {
                 <button onClick={() => void performItemAction('file')} disabled={!state.root} title="New Markdown file"><FilePlus2 size={15} /></button>
                 <button onClick={() => void performItemAction('folder')} disabled={!state.root} title="New folder"><FolderPlus size={15} /></button>
                 <button onClick={() => void refresh()} disabled={!state.root} title="Refresh"><RefreshCw size={15} /></button>
-                <button onClick={() => setMenuOpen(!menuOpen)} disabled={!state.selectedPath} title="File actions"><MoreHorizontal size={15} /></button>
-              </div>
-              {menuOpen && (
-                <div className="file-menu">
-                  <button onClick={() => void performItemAction('rename')}><Pencil size={14} /> Rename</button>
-                  <button onClick={() => void performItemAction('duplicate')}><Copy size={14} /> Duplicate</button>
-                  <button className="danger" onClick={() => void performItemAction('trash')}><Trash2 size={14} /> Move to Trash</button>
+                <div className="file-actions" ref={fileMenuRef}>
+                  <button onClick={() => setMenuOpen(!menuOpen)} disabled={!state.selectedPath} title="File actions" aria-expanded={menuOpen}><MoreHorizontal size={15} /></button>
+                  {menuOpen && (
+                    <div className="file-menu">
+                      <button onClick={() => { setMenuOpen(false); void performItemAction('rename') }}><Pencil size={14} /> Rename</button>
+                      <button onClick={() => { setMenuOpen(false); void performItemAction('duplicate') }}><Copy size={14} /> Duplicate</button>
+                      <button className="danger" onClick={() => { setMenuOpen(false); void performItemAction('trash') }}><Trash2 size={14} /> Move to Trash</button>
+                    </div>
+                  )}
                 </div>
-              )}
+                <button className="collapse-sidebar" onClick={() => { setMenuOpen(false); setSidebarVisible(false) }} title="Collapse sidebar" aria-label="Collapse sidebar"><PanelLeftClose size={15} /></button>
+              </div>
             </div>
             {state.root ? (
               <FileTree
