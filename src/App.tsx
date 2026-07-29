@@ -37,14 +37,19 @@ function App() {
   }, [state.root, state.set])
 
   const chooseFolder = async () => {
-    const selected = await open({ directory: true, multiple: false, title: 'Choose a Markdown folder' })
-    if (!selected) return
-    for (const document of [...state.documents]) {
-      if (!(await closeDocument(document.path))) return
+    try {
+      const selected = await open({ directory: true, multiple: false, title: 'Choose a Markdown folder' })
+      if (!selected) return
+      for (const document of [...state.documents]) {
+        if (!(await closeDocument(document.path))) return
+      }
+      const entries = await api.list(selected)
+      const expanded = new Set<string>(entries.filter((entry) => entry.isDir && !entry.relativePath.includes('/')).map((entry) => entry.path))
+      state.set({ root: selected, entries, expanded, documents: [], activePath: null, selectedPath: null, searchResults: [] })
+    } catch (error) {
+      console.error('Unable to open folder picker', error)
+      await message(String(error), { title: 'Unable to open folder', kind: 'error' })
     }
-    const entries = await api.list(selected)
-    const expanded = new Set<string>(entries.filter((entry) => entry.isDir && !entry.relativePath.includes('/')).map((entry) => entry.path))
-    state.set({ root: selected, entries, expanded, documents: [], activePath: null, selectedPath: null, searchResults: [] })
   }
 
   const openDocument = useCallback(async (path: string, jumpLine?: number) => {
