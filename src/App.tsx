@@ -27,6 +27,7 @@ function App() {
   const [sidebarVisible, setSidebarVisible] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [printing, setPrinting] = useState(false)
   const [itemDialog, setItemDialog] = useState<{
     action: 'file' | 'folder' | 'rename'
     value: string
@@ -203,6 +204,19 @@ function App() {
     void performItemAction(pending.action, pending.value)
   }
 
+  const exportActiveDocument = async () => {
+    if (!active || printing) return
+    setPrinting(true)
+    try {
+      await invoke('print_active_document')
+    } catch (error) {
+      console.error('Unable to print active document', error)
+      await message(String(error), { title: 'Unable to save PDF', kind: 'error' })
+    } finally {
+      setPrinting(false)
+    }
+  }
+
   useEffect(() => {
     if (!menuOpen) return
     const dismissMenu = (event: PointerEvent) => {
@@ -314,7 +328,9 @@ function App() {
         <span className="toolbar-spacer" />
         <button className="icon-button" onClick={() => state.set({ searchOpen: !state.searchOpen })} title="Search (⌘F)"><Search size={18} /></button>
         <button className="icon-button" onClick={() => void saveDocument()} disabled={!active || active.content === active.savedContent} title="Save (⌘S)"><Save size={18} /></button>
-        <button className="icon-button" onClick={() => window.print()} disabled={!active} title="Save active document to PDF"><Printer size={18} /></button>
+        <button className="icon-button" onClick={() => void exportActiveDocument()} disabled={!active || printing} title={printing ? 'Opening print dialog…' : 'Save active document to PDF'}>
+          <Printer className={printing ? 'printing' : ''} size={18} />
+        </button>
       </header>
 
       <section className="workspace">

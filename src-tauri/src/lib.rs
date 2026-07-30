@@ -248,6 +248,13 @@ fn open_path(path: String) -> Result<(), String> {
   open::that(path).map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+fn print_active_document(window: tauri::WebviewWindow) -> Result<(), String> {
+  window
+    .print()
+    .map_err(|error| format!("Unable to open the macOS print dialog: {error}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
@@ -263,7 +270,8 @@ pub fn run() {
       duplicate_item,
       trash_item,
       search_folder,
-      open_path
+      open_path,
+      print_active_document
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {
