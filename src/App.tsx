@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { ask, confirm, message, open } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import {
-  Copy, FilePlus2, FileText, FolderOpen, FolderPlus, MoreHorizontal, PanelLeftClose,
+  Copy, FilePlus2, FileText, Filter, FolderOpen, FolderPlus, MoreHorizontal, PanelLeftClose,
   PanelLeftOpen, Pencil, Printer, RefreshCw, Save, Search, Trash2, X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -26,10 +26,17 @@ function pdfFileName(markdownName: string) {
   return `${markdownName.replace(/\.(md|markdown|mdown|mkd)$/i, '')}.pdf`
 }
 
+function fileType(entry: FileEntry) {
+  const dot = entry.name.lastIndexOf('.')
+  return dot > 0 ? entry.name.slice(dot).toLowerCase() : 'No extension'
+}
+
 function App() {
   const state = useAppStore()
   const [sidebarVisible, setSidebarVisible] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [selectedTypes, setSelectedTypes] = useState<Set<string> | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [printing, setPrinting] = useState(false)
   const [itemDialog, setItemDialog] = useState<{
@@ -37,7 +44,27 @@ function App() {
     value: string
   } | null>(null)
   const fileMenuRef = useRef<HTMLDivElement>(null)
+  const filterMenuRef = useRef<HTMLDivElement>(null)
   const active = state.documents.find((document) => document.path === state.activePath) || null
+  const availableTypes = useMemo(
+    () => [...new Set(state.entries.filter((entry) => !entry.isDir).map(fileType))].sort(),
+    [state.entries],
+  )
+  const visibleEntries = useMemo(() => {
+    if (selectedTypes === null) return state.entries
+    const entriesByPath = new Map(state.entries.map((entry) => [entry.path, entry]))
+    const visiblePaths = new Set<string>()
+    for (const entry of state.entries) {
+      if (entry.isDir || !selectedTypes.has(fileType(entry))) continue
+      visiblePaths.add(entry.path)
+      let parent = dirname(entry.path)
+      while (entriesByPath.has(parent)) {
+        visiblePaths.add(parent)
+        parent = dirname(parent)
+      }
+    }
+    return state.entries.filter((entry) => visiblePaths.has(entry.path))
+  }, [state.entries, selectedTypes])
 
   useEffect(() => {
     document.title = active ? pdfFileName(active.name) : 'mdReader'
@@ -64,6 +91,8 @@ function App() {
       }
       const entries = await api.list(selected)
       const expanded = new Set<string>(entries.filter((entry) => entry.isDir && !entry.relativePath.includes('/')).map((entry) => entry.path))
+      setSelectedTypes(null)
+      setFilterOpen(false)
       state.set({ root: selected, entries, expanded, documents: [], activePath: null, selectedPath: null, searchResults: [] })
     } catch (error) {
       console.error('Unable to open folder picker', error)
@@ -245,6 +274,22 @@ function App() {
   }, [menuOpen])
 
   useEffect(() => {
+    if (!filterOpen) return
+    const dismissFilter = (event: PointerEvent) => {
+      if (!filterMenuRef.current?.contains(event.target as Node)) setFilterOpen(false)
+    }
+    const dismissOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFilterOpen(false)
+    }
+    window.addEventListener('pointerdown', dismissFilter, true)
+    window.addEventListener('keydown', dismissOnEscape)
+    return () => {
+      window.removeEventListener('pointerdown', dismissFilter, true)
+      window.removeEventListener('keydown', dismissOnEscape)
+    }
+  }, [filterOpen])
+
+  useEffect(() => {
     if (!state.root || !state.searchQuery.trim()) {
       state.set({ searchResults: [] })
       return
@@ -353,6 +398,52 @@ function App() {
                 <button onClick={() => openItemDialog('file')} disabled={!state.root} title="New Markdown file"><FilePlus2 size={15} /></button>
                 <button onClick={() => openItemDialog('folder')} disabled={!state.root} title="New folder"><FolderPlus size={15} /></button>
                 <button onClick={() => void refresh()} disabled={!state.root || refreshing} title={refreshing ? 'Refreshing…' : 'Refresh files'}><RefreshCw className={refreshing ? 'spinning' : ''} size={15} /></button>
+                <div className="file-filter" ref={filterMenuRef}>
+                  <button
+                    className={selectedTypes !== null ? 'filter-active' : ''}
+                    onClick={() => { setMenuOpen(false); setFilterOpen(!filterOpen) }}
+                    disabled={!state.root || !availableTypes.length}
+                    title="Filter by file type"
+                    aria-expanded={filterOpen}
+                  >
+                    <Filter size={15} />
+                  </button>
+                  {filterOpen && (
+                    <div className="filter-menu">
+                      <div className="filter-menu-heading">
+                        <strong>File types</strong>
+                        <button onClick={() => setSelectedTypes(null)}>All</button>
+                      </div>
+                      <div className="filter-options">
+                        {availableTypes.map((type) => {
+                          const checked = selectedTypes === null || selectedTypes.has(type)
+                          return (
+                            <label key={type}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => {
+                                  const next = selectedTypes === null
+                                    ? new Set(availableTypes.filter((candidate) => candidate !== type))
+                                    : new Set(selectedTypes)
+                                  if (selectedTypes !== null) {
+                                    if (next.has(type)) next.delete(type)
+                                    else next.add(type)
+                                  }
+                                  setSelectedTypes(next.size === availableTypes.length ? null : next)
+                                }}
+                              />
+                              <span>{type}</span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                      <div className="filter-summary">
+                        {selectedTypes === null ? 'Showing all types' : `${selectedTypes.size} of ${availableTypes.length} selected`}
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <div className="file-actions" ref={fileMenuRef}>
                   <button onClick={() => setMenuOpen(!menuOpen)} disabled={!state.selectedPath} title={state.selectedPath ? 'Actions for selected item' : 'Select a file or folder for more actions'} aria-expanded={menuOpen}><MoreHorizontal size={15} /></button>
                   {menuOpen && (
@@ -368,7 +459,7 @@ function App() {
             </div>
             {state.root ? (
               <FileTree
-                entries={state.entries}
+                entries={visibleEntries}
                 expanded={state.expanded}
                 selectedPath={state.selectedPath}
                 openPaths={openPaths}
