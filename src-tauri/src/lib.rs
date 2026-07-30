@@ -249,7 +249,10 @@ fn open_path(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn print_active_document(window: tauri::WebviewWindow) -> Result<(), String> {
+fn print_active_document(window: tauri::WebviewWindow, title: String) -> Result<(), String> {
+  window
+    .set_title(&title)
+    .map_err(|error| format!("Unable to set the PDF filename: {error}"))?;
   window
     .print()
     .map_err(|error| format!("Unable to open the macOS print dialog: {error}"))

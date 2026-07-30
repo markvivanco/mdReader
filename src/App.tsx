@@ -22,6 +22,10 @@ const api = {
   stamp: (root: string, path: string) => invoke<FileStamp>('file_stamp', { root, path }),
 }
 
+function pdfFileName(markdownName: string) {
+  return `${markdownName.replace(/\.(md|markdown|mdown|mkd)$/i, '')}.pdf`
+}
+
 function App() {
   const state = useAppStore()
   const [sidebarVisible, setSidebarVisible] = useState(true)
@@ -34,6 +38,10 @@ function App() {
   } | null>(null)
   const fileMenuRef = useRef<HTMLDivElement>(null)
   const active = state.documents.find((document) => document.path === state.activePath) || null
+
+  useEffect(() => {
+    document.title = active ? pdfFileName(active.name) : 'mdReader'
+  }, [active?.name])
 
   const refresh = useCallback(async () => {
     if (!state.root) return
@@ -208,7 +216,10 @@ function App() {
     if (!active || printing) return
     setPrinting(true)
     try {
-      await invoke('print_active_document')
+      const title = pdfFileName(active.name)
+      document.title = title
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+      await invoke('print_active_document', { title })
     } catch (error) {
       console.error('Unable to print active document', error)
       await message(String(error), { title: 'Unable to save PDF', kind: 'error' })
