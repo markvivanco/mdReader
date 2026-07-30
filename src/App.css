@@ -19,7 +19,7 @@
 .icon-button:hover, .folder-button:hover { background: #e9e9e5; }
 .icon-button:disabled { opacity: .35; cursor: default; }
 .workspace { min-height: 0; display: flex; }
-.sidebar { position: relative; flex: none; min-width: 220px; max-width: 520px; background: var(--panel); border-right: 1px solid var(--border); overflow: hidden; }
+.sidebar { position: relative; flex: none; min-width: 220px; max-width: 520px; background: var(--panel); border-right: 1px solid var(--border); overflow: visible; }
 .sidebar-header { position: relative; height: 38px; padding: 0 8px 0 13px; display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
 .sidebar-header > div { display: flex; }
 .file-actions, .file-filter { position: relative; display: flex; }
@@ -30,7 +30,7 @@
 .file-menu button { width: 100%; justify-content: flex-start; gap: 8px; padding: 0 8px; font-size: 13px; font-weight: 500; letter-spacing: normal; }
 .file-menu .danger { color: #b93128; }
 .sidebar-header button.filter-active { color: var(--accent); background: var(--accent-soft); }
-.filter-menu { position: absolute; z-index: 22; right: 0; top: 30px; width: 255px; padding: 7px; border: 1px solid var(--border); border-radius: 9px; background: var(--paper); box-shadow: 0 10px 26px rgba(0,0,0,.13); color: var(--ink); font-size: 12px; font-weight: 500; letter-spacing: normal; }
+.filter-menu { position: absolute; z-index: 22; left: 0; top: 30px; width: min(255px, calc(100vw - 24px)); padding: 7px; border: 1px solid var(--border); border-radius: 9px; background: var(--paper); box-shadow: 0 10px 26px rgba(0,0,0,.13); color: var(--ink); font-size: 12px; font-weight: 500; letter-spacing: normal; }
 .filter-menu-heading { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 3px 3px 5px; }
 .filter-menu-heading strong { font-size: 12px; }
 .filter-bulk-actions { display: flex; gap: 2px; }
