@@ -30,10 +30,11 @@
 .file-menu button { width: 100%; justify-content: flex-start; gap: 8px; padding: 0 8px; font-size: 13px; font-weight: 500; letter-spacing: normal; }
 .file-menu .danger { color: #b93128; }
 .sidebar-header button.filter-active { color: var(--accent); background: var(--accent-soft); }
-.filter-menu { position: absolute; z-index: 22; right: 0; top: 30px; width: 210px; padding: 7px; border: 1px solid var(--border); border-radius: 9px; background: var(--paper); box-shadow: 0 10px 26px rgba(0,0,0,.13); color: var(--ink); font-size: 12px; font-weight: 500; letter-spacing: normal; }
-.filter-menu-heading { height: 30px; display: flex; align-items: center; justify-content: space-between; padding: 0 5px 3px; }
+.filter-menu { position: absolute; z-index: 22; right: 0; top: 30px; width: 255px; padding: 7px; border: 1px solid var(--border); border-radius: 9px; background: var(--paper); box-shadow: 0 10px 26px rgba(0,0,0,.13); color: var(--ink); font-size: 12px; font-weight: 500; letter-spacing: normal; }
+.filter-menu-heading { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 3px 3px 5px; }
 .filter-menu-heading strong { font-size: 12px; }
-.filter-menu-heading button { width: auto; padding: 0 6px; color: var(--blue); font-size: 11px; }
+.filter-bulk-actions { display: flex; gap: 2px; }
+.filter-menu-heading button { width: auto; padding: 0 5px; color: var(--blue); font-size: 10px; white-space: nowrap; }
 .filter-options { max-height: 250px; overflow-y: auto; padding: 3px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 .filter-options label { min-height: 29px; padding: 4px 6px; display: flex; align-items: center; gap: 8px; border-radius: 5px; cursor: pointer; }
 .filter-options label:hover { background: var(--panel); }

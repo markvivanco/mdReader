@@ -412,7 +412,10 @@ function App() {
                     <div className="filter-menu">
                       <div className="filter-menu-heading">
                         <strong>File types</strong>
-                        <button onClick={() => setSelectedTypes(null)}>All</button>
+                        <div className="filter-bulk-actions">
+                          <button onClick={() => setSelectedTypes(null)}>Select all</button>
+                          <button onClick={() => setSelectedTypes(new Set())}>Deselect all</button>
+                        </div>
                       </div>
                       <div className="filter-options">
                         {availableTypes.map((type) => {
