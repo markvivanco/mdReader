@@ -1,0 +1,134 @@
+.inlineHost {
+  display: inline;
+}
+
+.blockHost {
+  display: block;
+  margin: 0.75rem 0;
+}
+
+.mathSurface {
+  border: 1px solid transparent;
+  border-radius: 0.35rem;
+  cursor: text;
+  max-width: 100%;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
+}
+
+.mathSurface:hover,
+.mathSurface:focus-visible {
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  border-color: color-mix(in srgb, currentColor 18%, transparent);
+  outline: none;
+}
+
+.inlineMath {
+  display: inline-flex;
+  margin: 0 0.12em;
+  padding: 0.05em 0.2em;
+  vertical-align: baseline;
+}
+
+.blockMath {
+  display: block;
+  overflow-x: auto;
+  padding: 0.65rem 0.8rem;
+  text-align: center;
+}
+
+.renderedMath {
+  max-width: 100%;
+}
+
+.fallbackMath {
+  color: var(--mdreader-color-danger, #b42318);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+.editorSurface {
+  align-items: stretch;
+  background: color-mix(in srgb, currentColor 5%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
+  border-radius: 0.4rem;
+  box-sizing: border-box;
+  display: inline-flex;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 0.3rem;
+  vertical-align: middle;
+}
+
+.blockEditorSurface {
+  display: flex;
+  width: 100%;
+}
+
+.formulaInput {
+  background: var(--mdreader-editor-input-background, Canvas);
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 0.25rem;
+  box-sizing: border-box;
+  color: inherit;
+  flex: 1 1 auto;
+  font: 0.92rem/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  min-width: 12rem;
+  padding: 0.35rem 0.45rem;
+}
+
+.formulaTextarea {
+  min-height: 5.5rem;
+  resize: vertical;
+  width: 100%;
+}
+
+.formulaInput:focus {
+  border-color: var(--mdreader-color-accent, #4f46e5);
+  outline: 2px solid color-mix(in srgb, var(--mdreader-color-accent, #4f46e5) 24%, transparent);
+  outline-offset: 0;
+}
+
+.editorActions {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 0.25rem;
+}
+
+.editorButton {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-radius: 0.25rem;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  min-width: 2rem;
+  padding: 0.3rem 0.45rem;
+}
+
+.editorButton:hover,
+.editorButton:focus-visible {
+  background: color-mix(in srgb, currentColor 9%, transparent);
+  outline: none;
+}
+
+.toolbarIcon {
+  align-items: center;
+  display: inline-flex;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 1rem;
+  justify-content: center;
+  min-width: 1.25rem;
+}
+
+@media (forced-colors: active) {
+  .mathSurface:hover,
+  .mathSurface:focus-visible,
+  .editorSurface,
+  .formulaInput,
+  .editorButton {
+    border-color: ButtonText;
+  }
+}

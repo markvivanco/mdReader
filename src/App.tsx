@@ -3,14 +3,15 @@ import { invoke } from '@tauri-apps/api/core'
 import { ask, confirm, message, open } from '@tauri-apps/plugin-dialog'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import {
-  Copy, FilePlus2, FileText, Filter, FolderOpen, FolderPlus, MoreHorizontal, PanelLeftClose,
-  PanelLeftOpen, Pencil, Printer, RefreshCw, Save, Search, Trash2, X,
+  Code2, Copy, Eye, FilePlus2, FileText, Filter, FolderOpen, FolderPlus, MoreHorizontal,
+  PanelLeftClose, PanelLeftOpen, Pencil, Printer, RefreshCw, Save, Search, Trash2, X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { FileTree } from './components/FileTree'
 import { MarkdownPreview } from './components/MarkdownPreview'
 import { RawEditor } from './components/RawEditor'
+import { RichMarkdownEditor, type RichMarkdownEditorHandle } from './components/RichMarkdownEditor'
 import { dirname, displayName, isMarkdown } from './lib/path'
 import { useAppStore } from './store/useAppStore'
 import type { FileEntry, FileStamp, OpenDocument, SearchMatch } from './types'
@@ -45,6 +46,9 @@ function App() {
   } | null>(null)
   const fileMenuRef = useRef<HTMLDivElement>(null)
   const filterMenuRef = useRef<HTMLDivElement>(null)
+  const richEditorRef = useRef<RichMarkdownEditorHandle>(null)
+  const closingWindowRef = useRef(false)
+  const createMarkdownFileRef = useRef<() => Promise<void>>(async () => {})
   const active = state.documents.find((document) => document.path === state.activePath) || null
   const availableTypes = useMemo(
     () => [...new Set(state.entries.filter((entry) => !entry.isDir).map(fileType))].sort(),
@@ -70,6 +74,41 @@ function App() {
     document.title = active ? pdfFileName(active.name) : 'mdReader'
   }, [active?.name])
 
+  const flushDocument = useCallback(async (
+    path: string,
+    options?: { preserveFocus?: boolean },
+  ) => {
+    const current = useAppStore.getState()
+    const document = current.documents.find((item) => item.path === path)
+    if (!document) return null
+    const richEditor = richEditorRef.current
+    if (
+      current.activePath !== path
+      || document.mode !== 'preview'
+      || !richEditor
+      || richEditor.path !== path
+    ) {
+      return document
+    }
+
+    try {
+      const content = await richEditor.flush(options)
+      const latest = useAppStore.getState()
+      const latestDocument = latest.documents.find((item) => item.path === path)
+      if (!latestDocument) return null
+      if (latestDocument.content !== content) latest.updateDocument(path, { content })
+      return { ...latestDocument, content }
+    } catch (error) {
+      console.error('Unable to collect rich editor changes', error)
+      try {
+        await message(String(error), { title: 'Unable to apply editor changes', kind: 'error' })
+      } catch (dialogError) {
+        console.error('Unable to show editor error', dialogError)
+      }
+      return null
+    }
+  }, [])
+
   const refresh = useCallback(async () => {
     if (!state.root) return
     setRefreshing(true)
@@ -85,57 +124,73 @@ function App() {
   const chooseFolder = async () => {
     try {
       const selected = await open({ directory: true, multiple: false, title: 'Choose a Markdown folder' })
-      if (!selected) return
+      if (!selected) return false
       for (const document of [...state.documents]) {
-        if (!(await closeDocument(document.path))) return
+        if (!(await closeDocument(document.path))) return false
       }
       const entries = await api.list(selected)
       const expanded = new Set<string>(entries.filter((entry) => entry.isDir && !entry.relativePath.includes('/')).map((entry) => entry.path))
       setSelectedTypes(null)
       setFilterOpen(false)
       state.set({ root: selected, entries, expanded, documents: [], activePath: null, selectedPath: null, searchResults: [] })
+      return true
     } catch (error) {
       console.error('Unable to open folder picker', error)
       await message(String(error), { title: 'Unable to open folder', kind: 'error' })
+      return false
     }
   }
 
   const openDocument = useCallback(async (path: string, jumpLine?: number) => {
-    if (!state.root || !isMarkdown(path)) {
+    const current = useAppStore.getState()
+    if (!current.root || !isMarkdown(path)) {
       if (path) await invoke('open_path', { path })
       return
     }
-    const existing = state.documents.find((document) => document.path === path)
+    if (
+      current.activePath
+      && current.activePath !== path
+      && !(await flushDocument(current.activePath))
+    ) return
+    const latest = useAppStore.getState()
+    const existing = latest.documents.find((document) => document.path === path)
     if (existing) {
-      state.updateDocument(path, { mode: jumpLine ? 'raw' : existing.mode, jumpLine })
-      state.set({ activePath: path, selectedPath: path })
+      latest.updateDocument(path, { mode: jumpLine ? 'raw' : existing.mode, jumpLine })
+      latest.set({ activePath: path, selectedPath: path })
       return
     }
     try {
-      const [content, stamp] = await Promise.all([api.read(state.root, path), api.stamp(state.root, path)])
+      const [content, stamp] = await Promise.all([api.read(latest.root!, path), api.stamp(latest.root!, path)])
       const document: OpenDocument = { path, name: displayName(path), content, savedContent: content, stamp, mode: jumpLine ? 'raw' : 'preview', jumpLine }
-      state.set({ documents: [...state.documents, document], activePath: path, selectedPath: path })
+      const afterRead = useAppStore.getState()
+      afterRead.set({ documents: [...afterRead.documents, document], activePath: path, selectedPath: path })
     } catch (error) {
       await message(String(error), { title: 'Unable to open file', kind: 'error' })
     }
-  }, [state.root, state.documents, state.set, state.updateDocument])
+  }, [flushDocument])
 
-  const saveDocument = useCallback(async (document = active) => {
-    if (!document || !state.root) return false
+  const saveDocument = useCallback(async (requestedDocument?: OpenDocument | null) => {
+    const current = useAppStore.getState()
+    const target = requestedDocument
+      ?? current.documents.find((document) => document.path === current.activePath)
+      ?? null
+    if (!target || !current.root) return false
+    const document = await flushDocument(target.path, { preserveFocus: true })
+    if (!document) return false
     try {
-      const stamp = await invoke<FileStamp>('write_text_file', { root: state.root, path: document.path, contents: document.content })
-      state.updateDocument(document.path, { savedContent: document.content, stamp })
+      const stamp = await invoke<FileStamp>('write_text_file', { root: current.root, path: document.path, contents: document.content })
+      useAppStore.getState().updateDocument(document.path, { savedContent: document.content, stamp })
       return true
     } catch (error) {
       await message(String(error), { title: 'Unable to save file', kind: 'error' })
       return false
     }
-  }, [active, state.root, state.updateDocument])
+  }, [flushDocument])
 
   const closeDocument = useCallback(async (path: string) => {
-    const current = useAppStore.getState()
-    const document = current.documents.find((item) => item.path === path)
-    if (!document) return true
+    if (!useAppStore.getState().documents.some((document) => document.path === path)) return true
+    const document = await flushDocument(path)
+    if (!document) return false
     if (document.content !== document.savedContent) {
       const shouldSave = await ask(`Save changes to “${document.name}” before closing?`, {
         title: 'Unsaved changes',
@@ -160,7 +215,35 @@ function App() {
     const next = remaining[Math.min(index, remaining.length - 1)]?.path || null
     latest.set({ documents: remaining, activePath: latest.activePath === path ? next : latest.activePath })
     return true
-  }, [saveDocument])
+  }, [flushDocument, saveDocument])
+
+  const activateDocument = useCallback(async (path: string) => {
+    const current = useAppStore.getState()
+    if (
+      current.activePath
+      && current.activePath !== path
+      && !(await flushDocument(current.activePath))
+    ) return
+    useAppStore.getState().set({ activePath: path })
+  }, [flushDocument])
+
+  const switchDocumentMode = useCallback(async (path: string, mode: OpenDocument['mode']) => {
+    const current = useAppStore.getState()
+    if (
+      current.activePath
+      && current.activePath !== path
+      && !(await flushDocument(current.activePath))
+    ) return
+    const latest = useAppStore.getState()
+    const document = latest.documents.find((item) => item.path === path)
+    if (!document) return
+    if (latest.activePath === path && document.mode === 'preview' && mode !== 'preview') {
+      if (!(await flushDocument(path))) return
+    }
+    const afterFlush = useAppStore.getState()
+    afterFlush.updateDocument(path, { mode })
+    afterFlush.set({ activePath: path })
+  }, [flushDocument])
 
   const performItemAction = async (
     action: 'file' | 'folder' | 'rename' | 'duplicate' | 'trash',
@@ -233,6 +316,14 @@ function App() {
     })
   }
 
+  const createMarkdownFile = async () => {
+    const current = useAppStore.getState()
+    if (current.activePath && !(await flushDocument(current.activePath))) return
+    if (!state.root && !(await chooseFolder())) return
+    openItemDialog('file')
+  }
+  createMarkdownFileRef.current = createMarkdownFile
+
   const submitItemDialog = (event: FormEvent) => {
     event.preventDefault()
     if (!itemDialog?.value.trim()) return
@@ -243,9 +334,11 @@ function App() {
 
   const exportActiveDocument = async () => {
     if (!active || printing) return
+    const documentToPrint = await flushDocument(active.path)
+    if (!documentToPrint) return
     setPrinting(true)
     try {
-      const title = pdfFileName(active.name)
+      const title = pdfFileName(documentToPrint.name)
       document.title = title
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
       await invoke('print_active_document', { title })
@@ -322,11 +415,13 @@ function App() {
         try {
           const stamp = await api.stamp(state.root!, document.path)
           if (stamp.modifiedMs === document.stamp.modifiedMs && stamp.size === document.stamp.size) continue
-          if (document.content === document.savedContent) {
+          const localDocument = await flushDocument(document.path)
+          if (!localDocument) continue
+          if (localDocument.content === localDocument.savedContent) {
             const content = await api.read(state.root!, document.path)
             state.updateDocument(document.path, { content, savedContent: content, stamp })
           } else {
-            const reload = await ask(`“${document.name}” changed on disk while you have unsaved edits. Reload it and discard your edits?`, {
+            const reload = await ask(`“${localDocument.name}” changed on disk while you have unsaved edits. Reload it and discard your edits?`, {
               title: 'File conflict', kind: 'warning', okLabel: 'Reload', cancelLabel: 'Keep My Edits',
             })
             if (reload) {
@@ -340,7 +435,7 @@ function App() {
       }
     }, 3000)
     return () => clearInterval(timer)
-  }, [state.root, state.documents.length, state.updateDocument])
+  }, [flushDocument, state.root, state.documents.length, state.updateDocument])
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
@@ -348,29 +443,52 @@ function App() {
         event.preventDefault()
         void saveDocument()
       }
+      if (event.metaKey && event.key.toLowerCase() === 'n') {
+        event.preventDefault()
+        void createMarkdownFileRef.current()
+      }
       if (event.metaKey && event.key.toLowerCase() === 'f') {
         event.preventDefault()
-        state.set({ searchOpen: true })
+        const current = useAppStore.getState()
+        void (async () => {
+          if (current.activePath && !(await flushDocument(current.activePath))) return
+          useAppStore.getState().set({ searchOpen: true })
+        })()
       }
       if (event.metaKey && event.key.toLowerCase() === 'w' && state.activePath) {
         event.preventDefault()
         void closeDocument(state.activePath)
       }
     }
-    window.addEventListener('keydown', handleKey)
+    window.addEventListener('keydown', handleKey, true)
+    return () => window.removeEventListener('keydown', handleKey, true)
+  }, [closeDocument, flushDocument, saveDocument, state.activePath])
+
+  useEffect(() => {
+    let disposed = false
     let unlisten: (() => void) | undefined
     void getCurrentWindow().onCloseRequested(async (event) => {
-      const dirty = useAppStore.getState().documents.filter((document) => document.content !== document.savedContent)
-      if (!dirty.length) return
       event.preventDefault()
-      for (const document of dirty) if (!(await closeDocument(document.path))) return
-      await getCurrentWindow().destroy()
-    }).then((value) => { unlisten = value })
+      if (closingWindowRef.current) return
+      closingWindowRef.current = true
+      try {
+        const current = useAppStore.getState()
+        if (current.activePath && !(await flushDocument(current.activePath))) return
+        const dirty = useAppStore.getState().documents.filter((document) => document.content !== document.savedContent)
+        for (const document of dirty) if (!(await closeDocument(document.path))) return
+        await getCurrentWindow().destroy()
+      } finally {
+        closingWindowRef.current = false
+      }
+    }).then((value) => {
+      if (disposed) value()
+      else unlisten = value
+    })
     return () => {
-      window.removeEventListener('keydown', handleKey)
+      disposed = true
       unlisten?.()
     }
-  }, [closeDocument, saveDocument, state.activePath, state.set])
+  }, [closeDocument, flushDocument])
 
   const openPaths = useMemo(() => new Set(state.documents.map((document) => document.path)), [state.documents])
 
@@ -382,8 +500,29 @@ function App() {
         </button>
         <button className="folder-button" onClick={chooseFolder}><FolderOpen size={17} /> {state.root ? displayName(state.root) : 'Open Folder'}</button>
         <span className="toolbar-spacer" />
+        {active && (
+          <div className="editor-mode-switch" role="group" aria-label="Editor mode">
+            <button
+              className={active.mode === 'preview' ? 'active' : ''}
+              onClick={() => void switchDocumentMode(active.path, 'preview')}
+              aria-pressed={active.mode === 'preview'}
+              title="Edit with formatting"
+            >
+              <Eye size={14} /> Preview
+            </button>
+            <button
+              className={active.mode === 'raw' ? 'active' : ''}
+              onClick={() => void switchDocumentMode(active.path, 'raw')}
+              aria-pressed={active.mode === 'raw'}
+              title="Edit raw Markdown"
+            >
+              <Code2 size={14} /> Raw
+            </button>
+          </div>
+        )}
+        <button className="icon-button" onClick={() => void createMarkdownFile()} title="New Markdown file (⌘N)"><FilePlus2 size={18} /></button>
         <button className="icon-button" onClick={() => state.set({ searchOpen: !state.searchOpen })} title="Search (⌘F)"><Search size={18} /></button>
-        <button className="icon-button" onClick={() => void saveDocument()} disabled={!active || active.content === active.savedContent} title="Save (⌘S)"><Save size={18} /></button>
+        <button className="icon-button" onClick={() => void saveDocument()} disabled={!active} title="Save (⌘S)"><Save size={18} /></button>
         <button className="icon-button" onClick={() => void exportActiveDocument()} disabled={!active || printing} title={printing ? 'Opening print dialog…' : 'Save active document to PDF'}>
           <Printer className={printing ? 'printing' : ''} size={18} />
         </button>
@@ -500,18 +639,17 @@ function App() {
           {state.documents.length > 0 && (
             <nav className="tabs">
               {state.documents.map((document) => (
-                <button key={document.path} className={`tab ${document.path === state.activePath ? 'active' : ''}`} onClick={() => state.set({ activePath: document.path })}>
+                <button key={document.path} className={`tab ${document.path === state.activePath ? 'active' : ''}`} onClick={() => void activateDocument(document.path)}>
                   <FileText size={14} />
                   <span>{document.name}</span>
                   {document.content !== document.savedContent && <i />}
                   <span
                     role="button"
                     className="mode-toggle"
-                    title={document.mode === 'preview' ? 'Show raw Markdown' : 'Show rendered preview'}
+                    title={document.mode === 'preview' ? 'Edit raw Markdown' : 'Edit with formatting'}
                     onClick={(event) => {
                       event.stopPropagation()
-                      state.updateDocument(document.path, { mode: document.mode === 'preview' ? 'raw' : 'preview' })
-                      state.set({ activePath: document.path })
+                      void switchDocumentMode(document.path, document.mode === 'preview' ? 'raw' : 'preview')
                     }}
                   >
                     {document.mode === 'preview' ? 'Preview' : 'Raw'}
@@ -558,9 +696,15 @@ function App() {
                   onJumpComplete={() => state.updateDocument(active.path, { jumpLine: undefined })}
                 />
               ) : (
-                <div className="preview-scroll">
-                  <MarkdownPreview content={active.content} path={active.path} onOpenMarkdown={(path) => void openDocument(path)} />
-                </div>
+                <RichMarkdownEditor
+                  key={active.path}
+                  ref={richEditorRef}
+                  value={active.content}
+                  path={active.path}
+                  onChange={(content) => state.updateDocument(active.path, { content })}
+                  onOpenMarkdown={(path) => void openDocument(path)}
+                  onSwitchToRaw={() => void switchDocumentMode(active.path, 'raw')}
+                />
               )}
             </section>
           ) : (
@@ -568,8 +712,11 @@ function App() {
               <div className="app-mark">md</div>
               <h1>mdReader</h1>
               <p>Read, search, edit, and export Markdown without leaving your desktop.</p>
-              <button onClick={chooseFolder}><FolderOpen size={18} /> Open a Folder</button>
-              <small>⌘F to search · ⌘S to save · drag files between folders to move</small>
+              <div className="welcome-actions">
+                <button onClick={() => void createMarkdownFile()}><FilePlus2 size={18} /> New Markdown File</button>
+                <button className="secondary" onClick={chooseFolder}><FolderOpen size={18} /> Open a Folder</button>
+              </div>
+              <small>⌘N for a new Markdown file · ⌘F to search · ⌘S to save</small>
             </section>
           )}
         </section>

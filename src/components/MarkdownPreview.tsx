@@ -13,6 +13,7 @@ import { MermaidDiagram } from './MermaidDiagram'
 
 const safeSchema = {
   ...defaultSchema,
+  tagNames: [...(defaultSchema.tagNames || []), 'u'],
   attributes: {
     ...defaultSchema.attributes,
     '*': [...(defaultSchema.attributes?.['*'] || []), 'className', 'id', 'title'],

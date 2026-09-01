@@ -1,0 +1,90 @@
+.definitionHost {
+  display: block;
+  margin: 0.75rem 0;
+}
+
+.definition {
+  align-items: flex-start;
+  border-left: 3px solid color-mix(in srgb, currentColor 22%, transparent);
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 0.45rem 0.65rem;
+}
+
+.definitionLabel {
+  align-items: center;
+  display: inline-flex;
+  font: 0.82rem/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  white-space: nowrap;
+}
+
+.labelInput,
+.referenceInput {
+  background: var(--mdreader-editor-input-background, Canvas);
+  border: 1px solid color-mix(in srgb, currentColor 24%, transparent);
+  border-radius: 0.25rem;
+  color: inherit;
+  font: inherit;
+  padding: 0.15rem 0.3rem;
+}
+
+.labelInput {
+  max-width: 12rem;
+  min-width: 4rem;
+}
+
+.definitionContent {
+  min-height: 1.5rem;
+  min-width: 0;
+  outline: none;
+}
+
+.definitionContent:focus {
+  box-shadow: inset 0 -2px color-mix(in srgb, var(--mdreader-color-accent, #4f46e5) 45%, transparent);
+}
+
+.referenceHost {
+  display: inline;
+}
+
+.reference {
+  background: transparent;
+  border: 0;
+  border-radius: 0.2rem;
+  color: var(--mdreader-color-accent, #4f46e5);
+  cursor: text;
+  font: inherit;
+  padding: 0 0.08em;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 0.15em;
+}
+
+.reference:hover,
+.reference:focus-visible {
+  background: color-mix(in srgb, currentColor 9%, transparent);
+  outline: none;
+}
+
+.referenceInput {
+  max-width: 12rem;
+  min-width: 4rem;
+  vertical-align: baseline;
+}
+
+.toolbarIcon {
+  align-items: center;
+  display: inline-flex;
+  font-size: 0.8rem;
+  justify-content: center;
+  min-width: 1.25rem;
+}
+
+@media (forced-colors: active) {
+  .definition,
+  .labelInput,
+  .referenceInput {
+    border-color: ButtonText;
+  }
+}
