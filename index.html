@@ -3,11 +3,33 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="stylesheet" href="/src/splash.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>mdreader</title>
+    <title>mdReader</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div
+      id="startup-splash"
+      class="startup-splash"
+      data-version="__MDREADER_VERSION__"
+    >
+      <span
+        id="startup-status"
+        class="startup-splash__sr-only"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      ></span>
+      <div class="startup-splash__content" aria-hidden="true">
+        <div class="startup-splash__icon-frame">
+          <img class="startup-splash__icon" src="/src-tauri/icons/icon.png" alt="" />
+        </div>
+        <div class="startup-splash__wordmark">mdReader</div>
+        <div id="startup-version" class="startup-splash__version">Version __MDREADER_VERSION__</div>
+        <div class="startup-splash__progress"><span></span></div>
+      </div>
+    </div>
+    <div id="root" inert aria-hidden="true"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

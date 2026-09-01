@@ -1,0 +1,160 @@
+.startup-splash {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 43%, rgba(47, 104, 190, 0.07), transparent 34%),
+    #fff;
+  color: #17345f;
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  opacity: 1;
+  transition: opacity 420ms ease;
+}
+
+.startup-splash::before,
+.startup-splash::after {
+  position: absolute;
+  width: min(48vw, 520px);
+  aspect-ratio: 1;
+  border: 1px solid rgba(47, 104, 190, 0.08);
+  border-radius: 50%;
+  content: '';
+  opacity: 0;
+  transform: scale(0.72);
+  animation: splash-halo 900ms 120ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.startup-splash::after {
+  width: min(62vw, 680px);
+  border-color: rgba(255, 190, 26, 0.12);
+  animation-delay: 220ms;
+}
+
+.startup-splash--leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.startup-splash__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.startup-splash__content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(320px, calc(100vw - 48px));
+  text-align: center;
+}
+
+.startup-splash__icon-frame {
+  width: clamp(112px, 15vw, 146px);
+  aspect-ratio: 1;
+  animation: splash-icon-in 520ms 80ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.startup-splash__icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 12px 18px rgba(32, 74, 136, 0.14));
+}
+
+.startup-splash__wordmark {
+  margin-top: 20px;
+  color: #17345f;
+  font-size: clamp(30px, 4vw, 40px);
+  font-weight: 740;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  opacity: 0;
+  transform: translateY(6px);
+  animation: splash-copy-in 420ms 260ms ease-out forwards;
+}
+
+.startup-splash__version {
+  margin-top: 11px;
+  color: #52647d;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  opacity: 0;
+  text-transform: uppercase;
+  transform: translateY(4px);
+  animation: splash-copy-in 380ms 410ms ease-out forwards;
+}
+
+.startup-splash__progress {
+  width: 104px;
+  height: 3px;
+  margin-top: 28px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #edf1f6;
+  opacity: 0;
+  animation: splash-progress-appear 240ms 520ms ease-out forwards;
+}
+
+.startup-splash__progress span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2f68be 0 64%, #ffbe1a 64% 100%);
+  transform: translateX(-100%);
+  animation: splash-progress-fill 1.65s 560ms cubic-bezier(0.33, 0, 0.2, 1) forwards;
+}
+
+@keyframes splash-halo {
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes splash-icon-in {
+  from { opacity: 0; transform: translateY(5px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes splash-copy-in {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes splash-progress-appear {
+  to { opacity: 1; }
+}
+
+@keyframes splash-progress-fill {
+  to { transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .startup-splash {
+    transition-duration: 80ms;
+  }
+
+  .startup-splash::before,
+  .startup-splash::after,
+  .startup-splash__icon-frame,
+  .startup-splash__wordmark,
+  .startup-splash__version,
+  .startup-splash__progress,
+  .startup-splash__progress span {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
