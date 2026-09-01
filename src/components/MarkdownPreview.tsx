@@ -30,10 +30,12 @@ export function MarkdownPreview({
   content,
   path,
   onOpenMarkdown,
+  forPrint = false,
 }: {
   content: string
   path: string
   onOpenMarkdown: (path: string) => void
+  forPrint?: boolean
 }) {
   const parsed = frontMatter(content)
   const components = {
@@ -44,7 +46,7 @@ export function MarkdownPreview({
     },
     img({ src = '', alt, ...props }: ComponentPropsWithoutRef<'img'>) {
       const resolved = /^(https?:|data:)/i.test(src) ? src : convertFileSrc(resolveRelative(path, src))
-      return <img src={resolved} alt={alt || ''} loading="lazy" {...props} />
+      return <img src={resolved} alt={alt || ''} loading={forPrint ? 'eager' : 'lazy'} {...props} />
     },
     a({ href = '', children, ...props }: ComponentPropsWithoutRef<'a'>) {
       const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -61,7 +63,7 @@ export function MarkdownPreview({
   return (
     <article className="markdown-body" data-document-dir={dirname(path)}>
       {parsed.yaml && (
-        <details className="frontmatter">
+        <details className="frontmatter" open={forPrint || undefined}>
           <summary>Front matter</summary>
           <pre><code className="language-yaml">{parsed.yaml}</code></pre>
         </details>

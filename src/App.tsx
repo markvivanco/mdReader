@@ -17,6 +17,8 @@ import { useAppStore } from './store/useAppStore'
 import type { FileEntry, FileStamp, OpenDocument, SearchMatch } from './types'
 import './App.css'
 
+type PrintDocumentSnapshot = Readonly<Pick<OpenDocument, 'content' | 'name' | 'path'>>
+
 const api = {
   list: (root: string) => invoke<FileEntry[]>('list_folder', { root }),
   read: (root: string, path: string) => invoke<string>('read_text_file', { root, path }),
@@ -32,6 +34,79 @@ function fileType(entry: FileEntry) {
   return dot > 0 ? entry.name.slice(dot).toLowerCase() : 'No extension'
 }
 
+function nextPaint() {
+  return new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
+}
+
+function imageLabel(image: HTMLImageElement, index: number) {
+  return image.alt.trim() || image.currentSrc || image.src || `image ${index + 1}`
+}
+
+async function waitForImage(image: HTMLImageElement, index: number) {
+  if (!image.complete) {
+    await new Promise<void>((resolve, reject) => {
+      const timeout = window.setTimeout(
+        () => reject(new Error(`Timed out loading ${imageLabel(image, index)}`)),
+        30_000,
+      )
+      const cleanup = () => {
+        window.clearTimeout(timeout)
+        image.removeEventListener('load', handleLoad)
+        image.removeEventListener('error', handleError)
+      }
+      const handleLoad = () => {
+        cleanup()
+        resolve()
+      }
+      const handleError = () => {
+        cleanup()
+        reject(new Error(`Unable to load ${imageLabel(image, index)}`))
+      }
+      image.addEventListener('load', handleLoad, { once: true })
+      image.addEventListener('error', handleError, { once: true })
+    })
+  }
+
+  if (!image.naturalWidth || !image.naturalHeight) {
+    throw new Error(`Unable to load ${imageLabel(image, index)}`)
+  }
+
+  try {
+    await image.decode()
+  } catch {
+    // A loaded image can reject decode() on older WebKit versions. The
+    // non-zero natural dimensions above still prove that it is printable.
+  }
+}
+
+async function waitForMermaidDiagrams(container: HTMLElement) {
+  const expected = container.querySelectorAll('.mermaid-diagram').length
+  if (!expected) return
+
+  const startedAt = performance.now()
+  while (container.querySelectorAll('.mermaid-diagram svg, .render-error').length < expected) {
+    if (performance.now() - startedAt > 30_000) {
+      throw new Error('Timed out rendering a Mermaid diagram')
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 50))
+  }
+
+  const error = container.querySelector('.render-error')
+  if (error) throw new Error(error.textContent || 'Unable to render a Mermaid diagram')
+}
+
+async function preparePrintPreview(container: HTMLElement) {
+  const images = [...container.querySelectorAll<HTMLImageElement>('img')]
+  await Promise.all([
+    ...images.map(waitForImage),
+    waitForMermaidDiagrams(container),
+    document.fonts.ready,
+  ])
+  await nextPaint()
+}
+
 function App() {
   const state = useAppStore()
   const [sidebarVisible, setSidebarVisible] = useState(true)
@@ -40,12 +115,15 @@ function App() {
   const [selectedTypes, setSelectedTypes] = useState<Set<string> | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [printing, setPrinting] = useState(false)
+  const [printDocument, setPrintDocument] = useState<PrintDocumentSnapshot | null>(null)
   const [itemDialog, setItemDialog] = useState<{
     action: 'file' | 'folder' | 'rename'
     value: string
   } | null>(null)
   const fileMenuRef = useRef<HTMLDivElement>(null)
   const filterMenuRef = useRef<HTMLDivElement>(null)
+  const printDocumentRef = useRef<HTMLDivElement>(null)
+  const printingRef = useRef(false)
   const richEditorRef = useRef<RichMarkdownEditorHandle>(null)
   const closingWindowRef = useRef(false)
   const createMarkdownFileRef = useRef<() => Promise<void>>(async () => {})
@@ -333,20 +411,31 @@ function App() {
   }
 
   const exportActiveDocument = async () => {
-    if (!active || printing) return
-    const documentToPrint = await flushDocument(active.path)
-    if (!documentToPrint) return
+    if (!active || printingRef.current) return
+    printingRef.current = true
     setPrinting(true)
     try {
-      const title = pdfFileName(documentToPrint.name)
+      const documentToPrint = await flushDocument(active.path)
+      if (!documentToPrint) return
+      const snapshot: PrintDocumentSnapshot = {
+        content: documentToPrint.content,
+        name: documentToPrint.name,
+        path: documentToPrint.path,
+      }
+      setPrintDocument(snapshot)
+      const title = pdfFileName(snapshot.name)
       document.title = title
-      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+      await nextPaint()
+      if (!printDocumentRef.current) throw new Error('The rendered print preview is unavailable')
+      await preparePrintPreview(printDocumentRef.current)
       await invoke('print_active_document', { title })
     } catch (error) {
       console.error('Unable to print active document', error)
       await message(String(error), { title: 'Unable to save PDF', kind: 'error' })
     } finally {
+      setPrintDocument(null)
       setPrinting(false)
+      printingRef.current = false
     }
   }
 
@@ -722,7 +811,20 @@ function App() {
         </section>
       </section>
       {active && <footer className="statusbar"><span>{active.path}</span><span>{active.content.split(/\s+/).filter(Boolean).length.toLocaleString()} words · {active.content.split('\n').length.toLocaleString()} lines</span></footer>}
-      <div className="print-document">{active && <MarkdownPreview content={active.content} path={active.path} onOpenMarkdown={() => {}} />}</div>
+      <div
+        ref={printDocumentRef}
+        className={`print-document${printing ? ' print-preparing' : ''}`}
+        aria-hidden={!printDocument}
+      >
+        {printDocument && (
+          <MarkdownPreview
+            content={printDocument.content}
+            path={printDocument.path}
+            onOpenMarkdown={() => {}}
+            forPrint
+          />
+        )}
+      </div>
       {itemDialog && (
         <div className="dialog-backdrop" role="presentation" onPointerDown={() => setItemDialog(null)}>
           <form className="item-dialog" onSubmit={submitItemDialog} onPointerDown={(event) => event.stopPropagation()}>

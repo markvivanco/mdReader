@@ -148,6 +148,15 @@
 .statusbar span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .statusbar span:last-child { flex: none; }
 .print-document { display: none; }
+.print-document.print-preparing {
+  position: fixed;
+  top: 0;
+  left: -100000px;
+  display: block;
+  visibility: hidden;
+  width: 7.2in;
+  pointer-events: none;
+}
 .dialog-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; background: rgba(20,22,24,.26); backdrop-filter: blur(2px); }
 .item-dialog { width: min(390px, calc(100vw - 40px)); padding: 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--paper); box-shadow: 0 22px 70px rgba(0,0,0,.24); }
 .item-dialog h2 { margin: 0 0 17px; font-size: 17px; }
@@ -188,7 +197,12 @@
   html, body, #root { height: auto; overflow: visible; }
   .app-shell { display: block; }
   .toolbar, .workspace, .statusbar { display: none !important; }
-  .print-document { display: block; }
+  .print-document, .print-document.print-preparing {
+    position: static;
+    display: block;
+    visibility: visible;
+    width: auto;
+  }
   .print-document .markdown-body { max-width: none; padding: 0; color: black; }
   .print-document .markdown-body img { max-height: none; }
   .frontmatter { break-inside: avoid; }
