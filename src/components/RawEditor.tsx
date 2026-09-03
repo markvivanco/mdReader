@@ -8,12 +8,14 @@ import { useEffect, useRef } from 'react'
 export function RawEditor({
   value,
   onChange,
+  editing,
   jumpLine,
   searchQuery,
   onJumpComplete,
 }: {
   value: string
   onChange: (value: string) => void
+  editing: boolean
   jumpLine?: number
   searchQuery: string
   onJumpComplete: () => void
@@ -43,10 +45,12 @@ export function RawEditor({
 
   return (
     <CodeMirror
-      className="code-editor"
+      className={`code-editor${editing ? '' : ' read-only'}`}
       value={value}
       height="100%"
       extensions={[markdown(), EditorView.lineWrapping]}
+      editable={editing}
+      readOnly={!editing}
       onCreateEditor={(view) => { viewRef.current = view }}
       onChange={onChange}
       basicSetup={{

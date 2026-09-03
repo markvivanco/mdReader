@@ -24,6 +24,7 @@ export type OpenDocument = {
   content: string
   savedContent: string
   mode: 'preview' | 'raw'
+  editing: boolean
   stamp: FileStamp
   jumpLine?: number
 }

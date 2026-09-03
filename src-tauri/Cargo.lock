@@ -1745,6 +1745,8 @@ name = "mdreader"
 version = "0.1.0"
 dependencies = [
  "log",
+ "objc2",
+ "objc2-app-kit",
  "open",
  "serde",
  "serde_json",

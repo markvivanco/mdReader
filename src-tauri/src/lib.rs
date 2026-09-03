@@ -6,6 +6,11 @@ use std::{
 };
 use walkdir::WalkDir;
 
+mod quit;
+
+use quit::{CloseDecision, QuitCoordinator};
+use tauri::Manager;
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct FileEntry {
@@ -260,8 +265,21 @@ fn print_active_document(window: tauri::WebviewWindow, title: String) -> Result<
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-  tauri::Builder::default()
+  let app = tauri::Builder::default()
+    .manage(QuitCoordinator::default())
     .plugin(tauri_plugin_dialog::init())
+    .on_window_event(|window, event| {
+      if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        let coordinator = window.state::<QuitCoordinator>();
+        let decision = coordinator.request_close();
+        if decision != CloseDecision::Allow {
+          api.prevent_close();
+          if let CloseDecision::PreventAndNotify(request_id) = decision {
+            quit::notify_close_request(window.app_handle(), &coordinator, request_id);
+          }
+        }
+      }
+    })
     .invoke_handler(tauri::generate_handler![
       list_folder,
       read_text_file,
@@ -274,7 +292,11 @@ pub fn run() {
       trash_item,
       search_folder,
       open_path,
-      print_active_document
+      print_active_document,
+      quit::close_listener_ready,
+      quit::close_listener_unready,
+      quit::ack_close_request,
+      quit::resolve_close_request
     ])
     .setup(|app| {
       if cfg!(debug_assertions) {
@@ -284,8 +306,33 @@ pub fn run() {
             .build(),
         )?;
       }
+
+      let quit_coordinator = app.state::<QuitCoordinator>().inner().clone();
+      quit::start_close_watchdog(app.handle(), quit_coordinator.clone())
+        .map_err(std::io::Error::other)?;
+
+      #[cfg(target_os = "macos")]
+      quit::install_macos_termination_hook(
+        app.handle(),
+        quit_coordinator,
+      )
+      .map_err(std::io::Error::other)?;
+
       Ok(())
     })
-    .run(tauri::generate_context!())
-    .expect("error while running tauri application");
+    .build(tauri::generate_context!())
+    .expect("error while building tauri application");
+
+  app.run(|app_handle, event| {
+    if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
+      let coordinator = app_handle.state::<QuitCoordinator>();
+      let decision = coordinator.request_exit(code);
+      if decision != CloseDecision::Allow {
+        api.prevent_exit();
+        if let CloseDecision::PreventAndNotify(request_id) = decision {
+          quit::notify_close_request(app_handle, &coordinator, request_id);
+        }
+      }
+    }
+  });
 }

@@ -5,7 +5,7 @@ mdReader is a macOS-first native Markdown reader, editor, and file manager built
 ## Features
 
 - Browse a selected folder and its subfolders in a resizable file tree
-- Open Markdown documents in tabs
+- Open Markdown documents in tabs; files start read-only until Edit is enabled
 - Edit every document in either rich Preview mode or raw Markdown mode
 - Word-style formatting controls for headings, emphasis, lists, links, images, tables, code, math, and front matter
 - GitHub Flavored Markdown: tables, task lists, autolinks, strikethrough, and fenced code
@@ -15,6 +15,7 @@ mdReader is a macOS-first native Markdown reader, editor, and file manager built
 - Open a search result at its matching line and highlight all occurrences
 - Create Markdown files with the sidebar button or ⌘N; rename, move, duplicate, and move items to macOS Trash
 - Detect external file changes and protect unsaved edits from conflicts
+- Warn before quitting with unsaved changes and review documents one at a time
 - Print or save the rendered active tab as PDF
 - Native light and dark appearances
 

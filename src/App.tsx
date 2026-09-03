@@ -1,9 +1,9 @@
 /* oxlint-disable react-hooks/exhaustive-deps -- Zustand actions are stable; effects intentionally track selected scalar state. */
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { ask, confirm, message, open } from '@tauri-apps/plugin-dialog'
-import { getCurrentWindow } from '@tauri-apps/api/window'
 import {
-  Code2, Copy, Eye, FilePlus2, FileText, Filter, FolderOpen, FolderPlus, MoreHorizontal,
+  Check, Code2, Copy, Eye, FilePlus2, FileText, Filter, FolderOpen, FolderPlus, MoreHorizontal,
   PanelLeftClose, PanelLeftOpen, Pencil, Printer, RefreshCw, Save, Search, Trash2, X,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -12,12 +12,28 @@ import { FileTree } from './components/FileTree'
 import { MarkdownPreview } from './components/MarkdownPreview'
 import { RawEditor } from './components/RawEditor'
 import { RichMarkdownEditor, type RichMarkdownEditorHandle } from './components/RichMarkdownEditor'
+import { createOpenDocument, documentViewState, selectDocumentSurface } from './lib/documentState'
 import { dirname, displayName, isMarkdown } from './lib/path'
+import { coordinateQuitReview, type QuitReviewDocumentChoice, type QuitReviewInitialChoice } from './lib/quitReview'
 import { useAppStore } from './store/useAppStore'
 import type { FileEntry, FileStamp, OpenDocument, SearchMatch } from './types'
 import './App.css'
 
 type PrintDocumentSnapshot = Readonly<Pick<OpenDocument, 'content' | 'name' | 'path'>>
+
+type CloseRequestPayload = {
+  requestId: number
+}
+
+type CloseListenerReadyResponse = {
+  listenerId: number
+}
+
+const REVIEW_AND_SAVE_LABEL = 'Review & Save'
+const QUIT_WITHOUT_SAVING_LABEL = 'Quit Without Saving'
+const SAVE_LABEL = 'Save'
+const DONT_SAVE_LABEL = 'Don’t Save'
+const CANCEL_LABEL = 'Cancel'
 
 const api = {
   list: (root: string) => invoke<FileEntry[]>('list_folder', { root }),
@@ -32,6 +48,47 @@ function pdfFileName(markdownName: string) {
 function fileType(entry: FileEntry) {
   const dot = entry.name.lastIndexOf('.')
   return dot > 0 ? entry.name.slice(dot).toLowerCase() : 'No extension'
+}
+
+async function chooseQuitAction(documents: readonly OpenDocument[]): Promise<QuitReviewInitialChoice> {
+  const count = documents.length
+  const noun = count === 1 ? 'document has' : 'documents have'
+  const choice = await message(
+    `${count} ${noun} unsaved changes. Would you like to review and save ${count === 1 ? 'it' : 'them'} before quitting?`,
+    {
+      title: 'Unsaved changes',
+      kind: 'warning',
+      buttons: {
+        yes: REVIEW_AND_SAVE_LABEL,
+        no: QUIT_WITHOUT_SAVING_LABEL,
+        cancel: CANCEL_LABEL,
+      },
+    },
+  )
+  if (choice === REVIEW_AND_SAVE_LABEL) return 'review'
+  if (choice === QUIT_WITHOUT_SAVING_LABEL) return 'discard-all'
+  return 'cancel'
+}
+
+async function chooseDocumentAction(
+  document: OpenDocument,
+  index?: number,
+  total?: number,
+): Promise<QuitReviewDocumentChoice> {
+  const progress = index === undefined || total === undefined
+    ? ''
+    : `\n\nDocument ${index + 1} of ${total}`
+  const choice = await message(
+    `Save changes to “${document.name}”?\n\n${document.path}${progress}`,
+    {
+      title: 'Unsaved changes',
+      kind: 'warning',
+      buttons: { yes: SAVE_LABEL, no: DONT_SAVE_LABEL, cancel: CANCEL_LABEL },
+    },
+  )
+  if (choice === SAVE_LABEL) return 'save'
+  if (choice === DONT_SAVE_LABEL) return 'discard'
+  return 'cancel'
 }
 
 function nextPaint() {
@@ -162,6 +219,7 @@ function App() {
     const richEditor = richEditorRef.current
     if (
       current.activePath !== path
+      || !document.editing
       || document.mode !== 'preview'
       || !richEditor
       || richEditor.path !== path
@@ -233,13 +291,23 @@ function App() {
     const latest = useAppStore.getState()
     const existing = latest.documents.find((document) => document.path === path)
     if (existing) {
-      latest.updateDocument(path, { mode: jumpLine ? 'raw' : existing.mode, jumpLine })
-      latest.set({ activePath: path, selectedPath: path })
+      if (
+        jumpLine !== undefined
+        && latest.activePath === path
+        && existing.editing
+        && existing.mode === 'preview'
+        && !(await flushDocument(path))
+      ) return
+      const afterFlush = useAppStore.getState()
+      afterFlush.updateDocument(path, jumpLine === undefined
+        ? { jumpLine }
+        : documentViewState(jumpLine))
+      afterFlush.set({ activePath: path, selectedPath: path })
       return
     }
     try {
       const [content, stamp] = await Promise.all([api.read(latest.root!, path), api.stamp(latest.root!, path)])
-      const document: OpenDocument = { path, name: displayName(path), content, savedContent: content, stamp, mode: jumpLine ? 'raw' : 'preview', jumpLine }
+      const document = createOpenDocument({ path, name: displayName(path), content, stamp, jumpLine })
       const afterRead = useAppStore.getState()
       afterRead.set({ documents: [...afterRead.documents, document], activePath: path, selectedPath: path })
     } catch (error) {
@@ -270,22 +338,9 @@ function App() {
     const document = await flushDocument(path)
     if (!document) return false
     if (document.content !== document.savedContent) {
-      const shouldSave = await ask(`Save changes to “${document.name}” before closing?`, {
-        title: 'Unsaved changes',
-        kind: 'warning',
-        okLabel: 'Save',
-        cancelLabel: 'Review Options',
-      })
-      if (shouldSave && !(await saveDocument(document))) return false
-      if (!shouldSave) {
-        const shouldDiscard = await ask(`Discard your unsaved changes to “${document.name}”?`, {
-          title: 'Discard changes?',
-          kind: 'warning',
-          okLabel: 'Discard',
-          cancelLabel: 'Cancel',
-        })
-        if (!shouldDiscard) return false
-      }
+      const action = await chooseDocumentAction(document)
+      if (action === 'cancel') return false
+      if (action === 'save' && !(await saveDocument(document))) return false
     }
     const latest = useAppStore.getState()
     const index = latest.documents.findIndex((item) => item.path === path)
@@ -315,12 +370,27 @@ function App() {
     const latest = useAppStore.getState()
     const document = latest.documents.find((item) => item.path === path)
     if (!document) return
-    if (latest.activePath === path && document.mode === 'preview' && mode !== 'preview') {
+    if (latest.activePath === path && document.editing && document.mode === 'preview' && mode !== 'preview') {
       if (!(await flushDocument(path))) return
     }
     const afterFlush = useAppStore.getState()
     afterFlush.updateDocument(path, { mode })
     afterFlush.set({ activePath: path })
+  }, [flushDocument])
+
+  const setDocumentEditing = useCallback(async (path: string, editing: boolean) => {
+    const current = useAppStore.getState()
+    if (
+      current.activePath
+      && current.activePath !== path
+      && !(await flushDocument(current.activePath))
+    ) return
+    const document = useAppStore.getState().documents.find((item) => item.path === path)
+    if (!document || document.editing === editing) return
+    if (!editing && document.mode === 'preview' && !(await flushDocument(path))) return
+    const latest = useAppStore.getState()
+    latest.updateDocument(path, { editing })
+    latest.set({ activePath: path })
   }, [flushDocument])
 
   const performItemAction = async (
@@ -439,6 +509,47 @@ function App() {
     }
   }
 
+  const reviewAppCloseRequest = useCallback(async (requestId: number) => {
+    if (closingWindowRef.current) return
+    closingWindowRef.current = true
+    let shouldClose = false
+    try {
+      const current = useAppStore.getState()
+      if (current.activePath && !(await flushDocument(current.activePath))) return
+      const latest = useAppStore.getState()
+      const dirty = latest.documents.filter((document) => document.content !== document.savedContent)
+      const result = await coordinateQuitReview({
+        documents: dirty,
+        chooseInitialAction: chooseQuitAction,
+        chooseDocumentAction: async (document, index, total) => {
+          const openState = useAppStore.getState()
+          openState.set({ activePath: document.path, selectedPath: document.path })
+          await nextPaint()
+          return chooseDocumentAction(document, index, total)
+        },
+        saveDocument: async (document) => {
+          const currentDocument = useAppStore.getState().documents.find((item) => item.path === document.path)
+          return currentDocument ? saveDocument(currentDocument) : false
+        },
+      })
+      shouldClose = result.shouldQuit
+    } catch (error) {
+      console.error('Unable to review unsaved changes', error)
+      try {
+        await message(String(error), { title: 'Unable to quit safely', kind: 'error' })
+      } catch (dialogError) {
+        console.error('Unable to show quit error', dialogError)
+      }
+    } finally {
+      try {
+        await invoke('resolve_close_request', { requestId, shouldClose })
+      } catch (error) {
+        console.error('Unable to resolve the close request', error)
+      }
+      closingWindowRef.current = false
+    }
+  }, [flushDocument, saveDocument])
+
   useEffect(() => {
     if (!menuOpen) return
     const dismissMenu = (event: PointerEvent) => {
@@ -500,6 +611,7 @@ function App() {
   useEffect(() => {
     if (!state.root || !state.documents.length) return
     const timer = window.setInterval(async () => {
+      if (closingWindowRef.current) return
       for (const document of useAppStore.getState().documents) {
         try {
           const stamp = await api.stamp(state.root!, document.path)
@@ -556,30 +668,52 @@ function App() {
   useEffect(() => {
     let disposed = false
     let unlisten: (() => void) | undefined
-    void getCurrentWindow().onCloseRequested(async (event) => {
-      event.preventDefault()
-      if (closingWindowRef.current) return
-      closingWindowRef.current = true
-      try {
-        const current = useAppStore.getState()
-        if (current.activePath && !(await flushDocument(current.activePath))) return
-        const dirty = useAppStore.getState().documents.filter((document) => document.content !== document.savedContent)
-        for (const document of dirty) if (!(await closeDocument(document.path))) return
-        await getCurrentWindow().destroy()
-      } finally {
-        closingWindowRef.current = false
-      }
-    }).then((value) => {
+    let listenerId: number | undefined
+
+    const markListenerUnready = (id: number) => {
+      void invoke('close_listener_unready', { listenerId: id }).catch((error) => {
+        console.error('Unable to unregister the close listener', error)
+      })
+    }
+
+    void listen<CloseRequestPayload>('app-close-requested', (event) => {
+      void (async () => {
+        if (closingWindowRef.current) return
+        try {
+          const acknowledged = await invoke<boolean>('ack_close_request', {
+            requestId: event.payload.requestId,
+          })
+          if (!acknowledged) return
+        } catch (error) {
+          console.error('Unable to acknowledge the close request', error)
+          return
+        }
+        await reviewAppCloseRequest(event.payload.requestId)
+      })()
+    }).then(async (value) => {
       if (disposed) value()
-      else unlisten = value
+      else {
+        unlisten = value
+        try {
+          const registration = await invoke<CloseListenerReadyResponse>('close_listener_ready')
+          if (disposed) markListenerUnready(registration.listenerId)
+          else listenerId = registration.listenerId
+        } catch (error) {
+          console.error('Unable to register the close listener', error)
+        }
+      }
+    }).catch((error) => {
+      console.error('Unable to register the close listener', error)
     })
     return () => {
       disposed = true
       unlisten?.()
+      if (listenerId !== undefined) markListenerUnready(listenerId)
     }
-  }, [closeDocument, flushDocument])
+  }, [reviewAppCloseRequest])
 
   const openPaths = useMemo(() => new Set(state.documents.map((document) => document.path)), [state.documents])
+  const activeSurface = active ? selectDocumentSurface(active) : null
 
   return (
     <main className="app-shell">
@@ -590,24 +724,35 @@ function App() {
         <button className="folder-button" onClick={chooseFolder}><FolderOpen size={17} /> {state.root ? displayName(state.root) : 'Open Folder'}</button>
         <span className="toolbar-spacer" />
         {active && (
-          <div className="editor-mode-switch" role="group" aria-label="Editor mode">
+          <>
+            <div className="editor-mode-switch" role="group" aria-label="Document mode">
+              <button
+                className={active.mode === 'preview' ? 'active' : ''}
+                onClick={() => void switchDocumentMode(active.path, 'preview')}
+                aria-pressed={active.mode === 'preview'}
+                title={active.editing ? 'Edit with formatting' : 'View rendered Markdown'}
+              >
+                <Eye size={14} /> Preview
+              </button>
+              <button
+                className={active.mode === 'raw' ? 'active' : ''}
+                onClick={() => void switchDocumentMode(active.path, 'raw')}
+                aria-pressed={active.mode === 'raw'}
+                title={active.editing ? 'Edit raw Markdown' : 'View raw Markdown'}
+              >
+                <Code2 size={14} /> Raw
+              </button>
+            </div>
             <button
-              className={active.mode === 'preview' ? 'active' : ''}
-              onClick={() => void switchDocumentMode(active.path, 'preview')}
-              aria-pressed={active.mode === 'preview'}
-              title="Edit with formatting"
+              className={`edit-toggle${active.editing ? ' active' : ''}`}
+              onClick={() => void setDocumentEditing(active.path, !active.editing)}
+              aria-pressed={active.editing}
+              title={active.editing ? 'Finish editing and return to read-only mode' : 'Enable editing'}
             >
-              <Eye size={14} /> Preview
+              {active.editing ? <Check size={14} /> : <Pencil size={14} />}
+              {active.editing ? 'Done' : 'Edit'}
             </button>
-            <button
-              className={active.mode === 'raw' ? 'active' : ''}
-              onClick={() => void switchDocumentMode(active.path, 'raw')}
-              aria-pressed={active.mode === 'raw'}
-              title="Edit raw Markdown"
-            >
-              <Code2 size={14} /> Raw
-            </button>
-          </div>
+          </>
         )}
         <button className="icon-button" onClick={() => void createMarkdownFile()} title="New Markdown file (⌘N)"><FilePlus2 size={18} /></button>
         <button className="icon-button" onClick={() => state.set({ searchOpen: !state.searchOpen })} title="Search (⌘F)"><Search size={18} /></button>
@@ -733,13 +878,8 @@ function App() {
                   <span>{document.name}</span>
                   {document.content !== document.savedContent && <i />}
                   <span
-                    role="button"
-                    className="mode-toggle"
-                    title={document.mode === 'preview' ? 'Edit raw Markdown' : 'Edit with formatting'}
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      void switchDocumentMode(document.path, document.mode === 'preview' ? 'raw' : 'preview')
-                    }}
+                    className={`mode-toggle${document.editing ? ' editing' : ''}`}
+                    title={`${document.editing ? 'Editing' : 'Read-only'} ${document.mode === 'preview' ? 'Preview' : 'Raw'} mode`}
                   >
                     {document.mode === 'preview' ? 'Preview' : 'Raw'}
                   </span>
@@ -776,15 +916,18 @@ function App() {
 
           {active ? (
             <section className="document-pane">
-              {active.mode === 'raw' ? (
+              {activeSurface === 'raw-editor' ? (
                 <RawEditor
                   value={active.content}
-                  onChange={(content) => state.updateDocument(active.path, { content })}
+                  editing={active.editing}
+                  onChange={(content) => {
+                    if (active.editing) state.updateDocument(active.path, { content })
+                  }}
                   jumpLine={active.jumpLine}
                   searchQuery={state.searchOpen ? state.searchQuery : ''}
                   onJumpComplete={() => state.updateDocument(active.path, { jumpLine: undefined })}
                 />
-              ) : (
+              ) : activeSurface === 'rich-editor' ? (
                 <RichMarkdownEditor
                   key={active.path}
                   ref={richEditorRef}
@@ -794,6 +937,14 @@ function App() {
                   onOpenMarkdown={(path) => void openDocument(path)}
                   onSwitchToRaw={() => void switchDocumentMode(active.path, 'raw')}
                 />
+              ) : (
+                <div className="preview-scroll document-reader">
+                  <MarkdownPreview
+                    content={active.content}
+                    path={active.path}
+                    onOpenMarkdown={(path) => void openDocument(path)}
+                  />
+                </div>
               )}
             </section>
           ) : (
@@ -810,7 +961,7 @@ function App() {
           )}
         </section>
       </section>
-      {active && <footer className="statusbar"><span>{active.path}</span><span>{active.content.split(/\s+/).filter(Boolean).length.toLocaleString()} words · {active.content.split('\n').length.toLocaleString()} lines</span></footer>}
+      {active && <footer className="statusbar"><span>{active.path}</span><span>{active.editing ? `Editing ${active.mode === 'preview' ? 'Preview' : 'Raw'}` : 'Read only'} · {active.content.split(/\s+/).filter(Boolean).length.toLocaleString()} words · {active.content.split('\n').length.toLocaleString()} lines</span></footer>}
       <div
         ref={printDocumentRef}
         className={`print-document${printing ? ' print-preparing' : ''}`}
