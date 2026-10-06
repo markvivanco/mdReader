@@ -13,10 +13,13 @@ import { MarkdownPreview } from './components/MarkdownPreview'
 import { RawEditor } from './components/RawEditor'
 import { RichMarkdownEditor, type RichMarkdownEditorHandle } from './components/RichMarkdownEditor'
 import { createOpenDocument, documentViewState, selectDocumentSurface } from './lib/documentState'
-import { dirname, displayName, isMarkdown } from './lib/path'
+import { dirname, displayName, isMarkdown, isPathWithin, rebasePath, samePath } from './lib/path'
+import { desktopPlatform, primaryModifier, shortcutLabel, trashName } from './lib/platform'
+import { printInWebview } from './lib/printing'
+import { markdownEnvelope } from './lib/markdownEnvelope'
 import { coordinateQuitReview, type QuitReviewDocumentChoice, type QuitReviewInitialChoice } from './lib/quitReview'
 import { useAppStore } from './store/useAppStore'
-import type { FileEntry, FileStamp, OpenDocument, SearchMatch } from './types'
+import type { FileEntry, FileStamp, FolderListing, OpenDocument, SearchMatch } from './types'
 import './App.css'
 
 type PrintDocumentSnapshot = Readonly<Pick<OpenDocument, 'content' | 'name' | 'path'>>
@@ -36,7 +39,7 @@ const DONT_SAVE_LABEL = 'Don’t Save'
 const CANCEL_LABEL = 'Cancel'
 
 const api = {
-  list: (root: string) => invoke<FileEntry[]>('list_folder', { root }),
+  list: (root: string) => invoke<FolderListing>('list_folder', { root }),
   read: (root: string, path: string) => invoke<string>('read_text_file', { root, path }),
   stamp: (root: string, path: string) => invoke<FileStamp>('file_stamp', { root, path }),
 }
@@ -184,6 +187,7 @@ function App() {
   const richEditorRef = useRef<RichMarkdownEditorHandle>(null)
   const closingWindowRef = useRef(false)
   const createMarkdownFileRef = useRef<() => Promise<void>>(async () => {})
+  const exportActiveDocumentRef = useRef<() => Promise<void>>(async () => {})
   const active = state.documents.find((document) => document.path === state.activePath) || null
   const availableTypes = useMemo(
     () => [...new Set(state.entries.filter((entry) => !entry.isDir).map(fileType))].sort(),
@@ -249,7 +253,7 @@ function App() {
     if (!state.root) return
     setRefreshing(true)
     try {
-      state.set({ entries: await api.list(state.root) })
+      state.set({ entries: (await api.list(state.root)).entries })
     } catch (error) {
       await message(String(error), { title: 'Unable to refresh folder', kind: 'error' })
     } finally {
@@ -264,11 +268,11 @@ function App() {
       for (const document of [...state.documents]) {
         if (!(await closeDocument(document.path))) return false
       }
-      const entries = await api.list(selected)
-      const expanded = new Set<string>(entries.filter((entry) => entry.isDir && !entry.relativePath.includes('/')).map((entry) => entry.path))
+      const { root, entries } = await api.list(selected)
+      const expanded = new Set<string>(entries.filter((entry) => entry.isDir && samePath(dirname(entry.path), root)).map((entry) => entry.path))
       setSelectedTypes(null)
       setFilterOpen(false)
-      state.set({ root: selected, entries, expanded, documents: [], activePath: null, selectedPath: null, searchResults: [] })
+      state.set({ root, entries, expanded, documents: [], activePath: null, selectedPath: null, searchResults: [] })
       return true
     } catch (error) {
       console.error('Unable to open folder picker', error)
@@ -283,6 +287,15 @@ function App() {
       if (path) await invoke('open_path', { path })
       return
     }
+    try {
+      // The dialog, links, drive-letter case and Rust's verbatim paths can spell
+      // one file differently. Use native identity before selecting/creating tabs.
+      path = await invoke<string>('resolve_document_path', { root: current.root, path })
+    } catch (error) {
+      await message(String(error), { title: 'Unable to open file', kind: 'error' })
+      return
+    }
+    if (useAppStore.getState().root !== current.root) return
     if (
       current.activePath
       && current.activePath !== path
@@ -309,7 +322,11 @@ function App() {
       const [content, stamp] = await Promise.all([api.read(latest.root!, path), api.stamp(latest.root!, path)])
       const document = createOpenDocument({ path, name: displayName(path), content, stamp, jumpLine })
       const afterRead = useAppStore.getState()
-      afterRead.set({ documents: [...afterRead.documents, document], activePath: path, selectedPath: path })
+      if (afterRead.root !== latest.root) return
+      const documents = afterRead.documents.some((openDocument) => openDocument.path === path)
+        ? afterRead.documents
+        : [...afterRead.documents, document]
+      afterRead.set({ documents, activePath: path, selectedPath: path })
     } catch (error) {
       await message(String(error), { title: 'Unable to open file', kind: 'error' })
     }
@@ -405,28 +422,33 @@ function App() {
         const name = suppliedName?.trim()
         if (!name) return
         const finalName = action === 'file' && !isMarkdown(name) ? `${name}.md` : name
-        await invoke('create_item', { root: state.root, path: `${parent}/${finalName}`, directory: action === 'folder' })
+        const newPath = await invoke<string>('create_item', { root: state.root, parent, name: finalName, directory: action === 'folder' })
         await refresh()
-        if (action === 'file') await openDocument(`${parent}/${finalName}`)
+        if (action === 'file') await openDocument(newPath)
       } else if (action === 'rename' && selected) {
         const name = suppliedName?.trim()
         if (!name || name === selected.name) return
+        const activePathBeforeRename = useAppStore.getState().activePath
+        if (activePathBeforeRename && isPathWithin(activePathBeforeRename, selected.path)
+          && !(await flushDocument(activePathBeforeRename))) return
         const newPath = await invoke<string>('rename_item', { root: state.root, path: selected.path, newName: name })
-        const documents = state.documents.map((document) => {
-          if (document.path !== selected.path && !document.path.startsWith(`${selected.path}/`)) return document
-          const path = `${newPath}${document.path.slice(selected.path.length)}`
+        const current = useAppStore.getState()
+        const documents = current.documents.map((document) => {
+          const path = rebasePath(document.path, selected.path, newPath)
+          if (path === document.path) return document
           return { ...document, path, name: displayName(path) }
         })
-        const activePath = state.activePath?.startsWith(selected.path) ? `${newPath}${state.activePath.slice(selected.path.length)}` : state.activePath
-        state.set({ documents, activePath, selectedPath: newPath })
+        const activePath = current.activePath ? rebasePath(current.activePath, selected.path, newPath) : null
+        const expanded = new Set([...current.expanded].map((path) => rebasePath(path, selected.path, newPath)))
+        state.set({ documents, activePath, expanded, selectedPath: newPath })
         await refresh()
       } else if (action === 'duplicate' && selected) {
         const newPath = await invoke<string>('duplicate_item', { root: state.root, path: selected.path })
         await refresh()
         state.set({ selectedPath: newPath })
       } else if (action === 'trash' && selected) {
-        if (!(await confirm(`Move “${selected.name}” to Trash?`, { title: 'Move to Trash', kind: 'warning' }))) return
-        const affected = state.documents.filter((document) => document.path === selected.path || document.path.startsWith(`${selected.path}/`))
+        if (!(await confirm(`Move “${selected.name}” to ${trashName}?`, { title: `Move to ${trashName}`, kind: 'warning' }))) return
+        const affected = state.documents.filter((document) => isPathWithin(document.path, selected.path))
         for (const document of affected) if (!(await closeDocument(document.path))) return
         await invoke('trash_item', { root: state.root, path: selected.path })
         state.set({ selectedPath: null })
@@ -440,14 +462,20 @@ function App() {
   const moveItem = async (source: string, destination: string) => {
     if (!state.root) return
     try {
+      const activePathBeforeMove = useAppStore.getState().activePath
+      if (activePathBeforeMove && isPathWithin(activePathBeforeMove, source)
+        && !(await flushDocument(activePathBeforeMove))) return
       const newPath = await invoke<string>('move_item', { root: state.root, path: source, destinationDir: destination })
-      const documents = state.documents.map((document) => {
-        if (document.path !== source && !document.path.startsWith(`${source}/`)) return document
-        const path = `${newPath}${document.path.slice(source.length)}`
+      const current = useAppStore.getState()
+      const documents = current.documents.map((document) => {
+        const path = rebasePath(document.path, source, newPath)
+        if (path === document.path) return document
         return { ...document, path, name: displayName(path) }
       })
-      const activePath = state.activePath?.startsWith(source) ? `${newPath}${state.activePath.slice(source.length)}` : state.activePath
-      state.set({ documents, activePath, selectedPath: newPath })
+      const activePath = current.activePath ? rebasePath(current.activePath, source, newPath) : null
+      const expanded = new Set([...current.expanded].map((path) => rebasePath(path, source, newPath)))
+      expanded.add(destination)
+      state.set({ documents, activePath, expanded, selectedPath: newPath })
       await refresh()
     } catch (error) {
       await message(String(error), { title: 'Unable to move item', kind: 'error' })
@@ -498,7 +526,8 @@ function App() {
       await nextPaint()
       if (!printDocumentRef.current) throw new Error('The rendered print preview is unavailable')
       await preparePrintPreview(printDocumentRef.current)
-      await invoke('print_active_document', { title })
+      if (desktopPlatform() === 'windows') await printInWebview(window)
+      else await invoke('print_active_document', { title })
     } catch (error) {
       console.error('Unable to print active document', error)
       await message(String(error), { title: 'Unable to save PDF', kind: 'error' })
@@ -508,6 +537,7 @@ function App() {
       printingRef.current = false
     }
   }
+  exportActiveDocumentRef.current = exportActiveDocument
 
   const reviewAppCloseRequest = useCallback(async (requestId: number) => {
     if (closingWindowRef.current) return
@@ -640,15 +670,19 @@ function App() {
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
-      if (event.metaKey && event.key.toLowerCase() === 's') {
+      if (primaryModifier(event) && event.key.toLowerCase() === 'p') {
+        event.preventDefault()
+        void exportActiveDocumentRef.current()
+      }
+      if (primaryModifier(event) && event.key.toLowerCase() === 's') {
         event.preventDefault()
         void saveDocument()
       }
-      if (event.metaKey && event.key.toLowerCase() === 'n') {
+      if (primaryModifier(event) && event.key.toLowerCase() === 'n') {
         event.preventDefault()
         void createMarkdownFileRef.current()
       }
-      if (event.metaKey && event.key.toLowerCase() === 'f') {
+      if (primaryModifier(event) && event.key.toLowerCase() === 'f') {
         event.preventDefault()
         const current = useAppStore.getState()
         void (async () => {
@@ -656,9 +690,9 @@ function App() {
           useAppStore.getState().set({ searchOpen: true })
         })()
       }
-      if (event.metaKey && event.key.toLowerCase() === 'w' && state.activePath) {
+      if (primaryModifier(event) && event.key.toLowerCase() === 'w') {
         event.preventDefault()
-        void closeDocument(state.activePath)
+        if (state.activePath) void closeDocument(state.activePath)
       }
     }
     window.addEventListener('keydown', handleKey, true)
@@ -754,10 +788,10 @@ function App() {
             </button>
           </>
         )}
-        <button className="icon-button" onClick={() => void createMarkdownFile()} title="New Markdown file (⌘N)"><FilePlus2 size={18} /></button>
-        <button className="icon-button" onClick={() => state.set({ searchOpen: !state.searchOpen })} title="Search (⌘F)"><Search size={18} /></button>
-        <button className="icon-button" onClick={() => void saveDocument()} disabled={!active} title="Save (⌘S)"><Save size={18} /></button>
-        <button className="icon-button" onClick={() => void exportActiveDocument()} disabled={!active || printing} title={printing ? 'Opening print dialog…' : 'Save active document to PDF'}>
+        <button className="icon-button" onClick={() => void createMarkdownFile()} title={`New Markdown file (${shortcutLabel('n')})`}><FilePlus2 size={18} /></button>
+        <button className="icon-button" onClick={() => state.set({ searchOpen: !state.searchOpen })} title={`Search (${shortcutLabel('f')})`}><Search size={18} /></button>
+        <button className="icon-button" onClick={() => void saveDocument()} disabled={!active} title={`Save (${shortcutLabel('s')})`}><Save size={18} /></button>
+        <button className="icon-button" onClick={() => void exportActiveDocument()} disabled={!active || printing} title={printing ? 'Printing…' : `Print or save active document to PDF (${shortcutLabel('p')})`}>
           <Printer className={printing ? 'printing' : ''} size={18} />
         </button>
       </header>
@@ -826,7 +860,7 @@ function App() {
                     <div className="file-menu">
                       <button onClick={() => openItemDialog('rename')}><Pencil size={14} /> Rename</button>
                       <button onClick={() => { setMenuOpen(false); void performItemAction('duplicate') }}><Copy size={14} /> Duplicate</button>
-                      <button className="danger" onClick={() => { setMenuOpen(false); void performItemAction('trash') }}><Trash2 size={14} /> Move to Trash</button>
+                      <button className="danger" onClick={() => { setMenuOpen(false); void performItemAction('trash') }}><Trash2 size={14} /> Move to {trashName}</button>
                     </div>
                   )}
                 </div>
@@ -919,6 +953,7 @@ function App() {
               {activeSurface === 'raw-editor' ? (
                 <RawEditor
                   value={active.content}
+                  lineEnding={markdownEnvelope(active.savedContent).eol}
                   editing={active.editing}
                   onChange={(content) => {
                     if (active.editing) state.updateDocument(active.path, { content })
@@ -956,7 +991,7 @@ function App() {
                 <button onClick={() => void createMarkdownFile()}><FilePlus2 size={18} /> New Markdown File</button>
                 <button className="secondary" onClick={chooseFolder}><FolderOpen size={18} /> Open a Folder</button>
               </div>
-              <small>⌘N for a new Markdown file · ⌘F to search · ⌘S to save</small>
+              <small>{shortcutLabel('n')} for a new Markdown file · {shortcutLabel('f')} to search · {shortcutLabel('s')} to save</small>
             </section>
           )}
         </section>

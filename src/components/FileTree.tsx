@@ -1,28 +1,7 @@
 import { ChevronDown, ChevronRight, File, FileText, Folder, FolderOpen } from 'lucide-react'
 import { isMarkdown } from '../lib/path'
+import { makeTree, type FileTreeNode } from '../lib/fileTree'
 import type { FileEntry } from '../types'
-
-type Node = FileEntry & { children: Node[] }
-
-function makeTree(entries: FileEntry[]) {
-  const roots: Node[] = []
-  const nodes = new Map<string, Node>()
-  for (const entry of [...entries].sort((a, b) => a.relativePath.localeCompare(b.relativePath))) {
-    nodes.set(entry.path, { ...entry, children: [] })
-  }
-  for (const node of nodes.values()) {
-    const parent = node.path.slice(0, node.path.lastIndexOf('/'))
-    const parentNode = nodes.get(parent)
-    if (parentNode) parentNode.children.push(node)
-    else roots.push(node)
-  }
-  const sort = (items: Node[]) => {
-    items.sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name))
-    items.forEach((item) => sort(item.children))
-  }
-  sort(roots)
-  return roots
-}
 
 export function FileTree({
   entries,
@@ -43,7 +22,7 @@ export function FileTree({
   onOpen: (entry: FileEntry) => void
   onMove: (source: string, destination: string) => void
 }) {
-  const render = (node: Node, depth: number) => {
+  const render = (node: FileTreeNode, depth: number) => {
     const isExpanded = expanded.has(node.path)
     const Icon = node.isDir ? (isExpanded ? FolderOpen : Folder) : isMarkdown(node.path) ? FileText : File
     return (

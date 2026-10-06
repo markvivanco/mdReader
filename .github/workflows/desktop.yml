@@ -1,0 +1,59 @@
+name: Desktop checks and Windows installers
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Install pnpm
+        run: npm install --global pnpm@12
+      - name: Set up stable Rust
+        run: |
+          rustup update stable --no-self-update
+          rustup default stable
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: TypeScript regression tests
+        run: pnpm test
+      - name: Lint
+        run: pnpm lint
+      - name: Frontend production build
+        run: pnpm build
+      - name: Native regression tests
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      - name: Build Windows installers
+        if: runner.os == 'Windows'
+        run: node node_modules/@tauri-apps/cli/tauri.js build --ci --bundles nsis msi -- --locked
+      - name: Collect unsigned Windows installers
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mdReader-windows-x64-unsigned
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            src-tauri/target/release/bundle/msi/*.msi

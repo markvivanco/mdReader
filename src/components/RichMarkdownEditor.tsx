@@ -36,7 +36,7 @@ import '@mdxeditor/editor/style.css'
 import { AlertTriangle, Code2 } from 'lucide-react'
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { markdownEnvelope, markdownForEditor, restoreMarkdownEnvelope } from '../lib/markdownEnvelope'
-import { isMarkdown, resolveRelative } from '../lib/path'
+import { isMarkdown, resolveDocumentTarget, resolveImageSource } from '../lib/path'
 import { MarkdownPreview } from './MarkdownPreview'
 import { editorFlushPlugin } from './rich-editor/editorFlushPlugin'
 import { FootnoteButtons, footnotePlugin } from './rich-editor/footnotePlugin'
@@ -164,17 +164,16 @@ export const RichMarkdownEditor = forwardRef<RichMarkdownEditorHandle, RichMarkd
       showLinkTitleField: true,
       onClickLinkCallback: (url) => {
         if (url.startsWith('#')) return
-        const resolved = resolveRelative(path, url)
-        const destination = resolved.split('#')[0]
-        if (isMarkdown(destination)) onOpenMarkdownRef.current(destination)
-        else void invoke('open_path', { path: resolved })
+        const resolved = resolveDocumentTarget(path, url)
+        if (resolved.kind === 'local' && isMarkdown(resolved.path)) onOpenMarkdownRef.current(resolved.path)
+        else if (resolved.kind === 'local') void invoke('open_path', { path: resolved.path })
+        else if (resolved.kind === 'external') void invoke('open_path', { path: resolved.target })
       },
     }),
     imagePlugin({
       allowSetImageDimensions: true,
       imagePreviewHandler: async (source) => {
-        if (/^(https?:|data:|blob:)/i.test(source)) return source
-        return convertFileSrc(resolveRelative(path, source))
+        return resolveImageSource(path, source, convertFileSrc)
       },
     }),
     tablePlugin(),
