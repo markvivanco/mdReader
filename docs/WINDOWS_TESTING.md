@@ -14,7 +14,7 @@ pnpm test
 pnpm lint
 pnpm build
 cargo test --locked --manifest-path src-tauri/Cargo.toml
-pnpm tauri build --bundles nsis,msi -- --locked
+pnpm exec tauri build --bundles nsis msi -- --locked
 ```
 
 The `Desktop checks and Windows installers` GitHub Actions workflow runs these
@@ -71,5 +71,6 @@ version, filesystem type, CI run URL, installer filename/hash, and failed checkl
 items. Mark network shares, ARM64, or other unavailable environments as **not tested**.
 Do not include private document contents or credentials in a public test report.
 
-Current local verification was performed on macOS. Native Windows execution and
-installer/UI acceptance remain pending until this checklist and the Windows CI job run.
+Local smoke testing was performed on macOS. Native Windows x64 CI has passed
+37 TypeScript and 16 Rust tests. Check the exact revision's CI result for installer
+build status; manual installer/UI acceptance remains pending this checklist.

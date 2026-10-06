@@ -314,7 +314,7 @@ The default build targets the host architecture. Universal macOS builds and Linu
 Run the build on Windows after installing the prerequisites:
 
 ```powershell
-pnpm tauri build --bundles nsis,msi -- --locked
+pnpm exec tauri build --bundles nsis msi -- --locked
 ```
 
 Default outputs:
@@ -328,6 +328,8 @@ src-tauri/target/release/
 ```
 
 The `.exe` setup uses NSIS; `.msi` uses WiX. MSI creation requires Windows and its VBScript optional feature. If WiX reports `failed to run light.exe`, check VBScript availability, or build only `--bundles nsis`. By default, Tauri's installer downloads WebView2's bootstrapper if the runtime is missing, requiring internet access. See [Tauri's installer documentation](https://v2.tauri.app/distribute/windows-installer/) for offline runtime packaging and installer options.
+
+Use `pnpm exec` here to preserve Cargo's `-- --locked` arguments, and list bundle types as separate arguments so PowerShell does not convert a comma-separated list into one space-containing argument.
 
 Installed-app users do not need Node, Rust, pnpm, or C++ build tools. Install and launch each installer on a clean machine and complete [Windows acceptance](docs/WINDOWS_TESTING.md) before distribution. Windows 10/11 x64 is the intended initial target; ARM64 and older Windows versions are not certified by this repository.
 
@@ -482,7 +484,7 @@ Do not paste credentials into public issues. If a credential is ever committed, 
 
 ## Testing
 
-The 2026-10-06 Windows compatibility work passed 37 TypeScript tests, 17 Rust tests on macOS, lint, the frontend build, and native compile checks using frozen dependencies (`--ignore-scripts`). The frontend build emitted a large-chunk warning. This is local macOS evidence; Windows-only native tests, Windows CI, WebView2 UI behavior, and installer acceptance remain pending a Windows run.
+The 2026-10-06 Windows compatibility work passed 37 TypeScript tests, 17 Rust tests on macOS, lint, the frontend build, and native compile checks using frozen dependencies (`--ignore-scripts`). Native Windows x64 CI also passed the 37 TypeScript tests and 16 Rust tests, including extended-length paths and case-only renames. The frontend build emitted a large-chunk warning. Check the CI run for the exact revision's installer-build status; manual WebView2 UI and installed-app acceptance remain outstanding.
 
 A macOS debug `.app` bundle also built successfully. A native smoke test verified folder selection/nesting, relative-link navigation without duplicate tabs, Raw editing and keyboard save with CRLF verified on disk, creating a filename containing `#`, renaming a folder with open descendant tabs, and clean quitting. It did not exercise Windows or actual PDF output.
 
@@ -528,7 +530,7 @@ Use disposable test files rather than important documents for file operations.
 
 ## Known limitations
 
-- Windows implementation awaits native CI and manual acceptance; Linux/mobile and Windows ARM64 are unverified.
+- Windows UI and installed-app acceptance remain outstanding; Linux/mobile and Windows ARM64 are unverified.
 - No session restore, autosave, automatic backups, database, cloud sync, or app-level encryption.
 - No atomic saves or final compare-before-write conflict check.
 - No complete security isolation for hostile Markdown, assets, file handlers, or symlink-containing folders.
