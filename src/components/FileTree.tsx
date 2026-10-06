@@ -1,5 +1,4 @@
-import { ChevronDown, ChevronRight, File, FileText, Folder, FolderOpen } from 'lucide-react'
-import { isMarkdown } from '../lib/path'
+import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen } from 'lucide-react'
 import { makeTree, type FileTreeNode } from '../lib/fileTree'
 import type { FileEntry } from '../types'
 
@@ -24,7 +23,7 @@ export function FileTree({
 }) {
   const render = (node: FileTreeNode, depth: number) => {
     const isExpanded = expanded.has(node.path)
-    const Icon = node.isDir ? (isExpanded ? FolderOpen : Folder) : isMarkdown(node.path) ? FileText : File
+    const Icon = node.isDir ? (isExpanded ? FolderOpen : Folder) : FileText
     return (
       <div key={node.path}>
         <button

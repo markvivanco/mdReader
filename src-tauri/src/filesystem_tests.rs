@@ -57,6 +57,39 @@ fn native_file_workflow_preserves_paths_content_and_search() {
 }
 
 #[test]
+fn folder_listing_shows_only_markdown_files_and_keeps_folders() {
+  let fixture = Fixture::new();
+  let nested = fixture.create(&fixture.root(), "archive.txt", true);
+  fixture.create(&fixture.root(), "empty folder", true);
+  let mut documents = Vec::new();
+  for name in ["readme.md", "UPPER.MD", "guide.Markdown", "notes.mdown", "draft.MkD"] {
+    documents.push(fixture.create(&fixture.root(), name, false));
+  }
+  documents.push(fixture.create(&nested, "nested.md", false));
+  for path in &documents {
+    fs::write(path, "searchable document").unwrap();
+  }
+  for parent in [&fixture.root(), &nested] {
+    for name in ["photo.png", "settings.json", "notes.txt", "backup.md.bak", "README"] {
+      let path = fixture.create(parent, name, false);
+      fs::write(path, "searchable asset").unwrap();
+    }
+  }
+
+  let listing = list_folder(fixture.root()).unwrap();
+  let visible_files: std::collections::BTreeSet<_> = listing.entries.iter()
+    .filter(|entry| !entry.is_dir).map(|entry| entry.path.clone()).collect();
+  let expected: std::collections::BTreeSet<_> = documents.into_iter().collect();
+  assert_eq!(visible_files, expected);
+  let visible_folders: std::collections::BTreeSet<_> = listing.entries.iter()
+    .filter(|entry| entry.is_dir).map(|entry| entry.name.as_str()).collect();
+  assert_eq!(visible_folders, ["archive.txt", "empty folder"].into_iter().collect());
+  let search_results: std::collections::BTreeSet<_> = search_folder(fixture.root(), "searchable".into())
+    .unwrap().into_iter().map(|result| result.path).collect();
+  assert_eq!(search_results, expected);
+}
+
+#[test]
 fn native_commands_reject_outside_roots_and_existing_destinations() {
   let fixture = Fixture::new();
   let outside = Fixture::new();
