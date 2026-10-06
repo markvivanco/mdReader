@@ -2,6 +2,7 @@ import { getVersion } from '@tauri-apps/api/app'
 import { isTauri } from '@tauri-apps/api/core'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { primaryModifier } from './lib/platform'
 import './index.css'
 
 const READABLE_TIME_MS = 2_200
@@ -17,7 +18,7 @@ const startedAt = performance.now()
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 const blockAppShortcuts = (event: KeyboardEvent) => {
-  const isAppShortcut = event.metaKey && ['f', 'n', 's'].includes(event.key.toLowerCase())
+  const isAppShortcut = primaryModifier(event) && ['f', 'n', 's', 'w', 'p'].includes(event.key.toLowerCase())
   if (!isAppShortcut) return
   event.preventDefault()
   event.stopImmediatePropagation()

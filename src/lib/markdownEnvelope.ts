@@ -22,6 +22,17 @@ export function markdownForEditor(markdown: string) {
   return (markdown.startsWith('\uFEFF') ? markdown.slice(1) : markdown).replace(/\r\n/g, '\n')
 }
 
+export function rawEditorText(markdown: string) {
+  // CodeMirror Text.toString() always joins with LF, including when a custom
+  // lineSeparator is configured. Keep its controlled value in that same form.
+  return markdown.replace(/\r\n/g, '\n')
+}
+
+export function rawDocumentText(markdown: string, eol: '\n' | '\r\n') {
+  const normalized = rawEditorText(markdown)
+  return eol === '\r\n' ? normalized.replace(/\n/g, '\r\n') : normalized
+}
+
 export function restoreMarkdownEnvelope(markdown: string, envelope: MarkdownEnvelope) {
   const core = markdown.replace(/\r\n/g, '\n').replace(/^\n+|\n+$/g, '')
   if (!core) return envelope.bom ? '\uFEFF' : ''

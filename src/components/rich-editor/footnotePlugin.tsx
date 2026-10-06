@@ -1,4 +1,5 @@
 /* oxlint-disable react/only-export-components -- Editor nodes, plugin, and toolbar controls form one integration unit. */
+import { primaryModifier } from '../../lib/platform'
 import {
   DialogButton,
   NestedEditorsContext,
@@ -107,7 +108,7 @@ function FootnoteDefinitionEditor() {
 
   const handleLabelKeyDown = useCallback(
     (event: KeyboardEvent<HTMLInputElement>) => {
-      if (event.metaKey && ['f', 'n', 's', 'w'].includes(event.key.toLowerCase())) {
+      if (primaryModifier(event) && ['f', 'n', 's', 'w', 'p'].includes(event.key.toLowerCase())) {
         event.currentTarget.blur()
         return
       }
@@ -188,7 +189,7 @@ function FootnoteReferenceEditor({ label, onChange }: FootnoteReferenceEditorPro
         onChange={(event) => setDraft(event.target.value)}
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
-          if (event.metaKey && ['f', 'n', 's', 'w'].includes(event.key.toLowerCase())) {
+          if (primaryModifier(event) && ['f', 'n', 's', 'w', 'p'].includes(event.key.toLowerCase())) {
             commit()
             return
           }

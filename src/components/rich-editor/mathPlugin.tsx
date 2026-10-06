@@ -1,4 +1,5 @@
 /* oxlint-disable react/only-export-components -- Editor nodes, plugin, and toolbar controls form one integration unit. */
+import { primaryModifier } from '../../lib/platform'
 import {
   DialogButton,
   addActivePlugin$,
@@ -124,7 +125,7 @@ function MathEditor({ formula, inline, onChange }: MathEditorProps) {
 
   const handleEditorKeyDown = useCallback(
     (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      if (event.metaKey && ['f', 'n', 's', 'w'].includes(event.key.toLowerCase())) {
+      if (primaryModifier(event) && ['f', 'n', 's', 'w', 'p'].includes(event.key.toLowerCase())) {
         commitEditing()
         return
       }

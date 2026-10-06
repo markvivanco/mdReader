@@ -7,6 +7,8 @@ use std::{
 use walkdir::WalkDir;
 
 mod quit;
+#[cfg(test)]
+mod filesystem_tests;
 
 use quit::{CloseDecision, QuitCoordinator};
 use tauri::Manager;
@@ -18,6 +20,12 @@ struct FileEntry {
   relative_path: String,
   name: String,
   is_dir: bool,
+}
+
+#[derive(Serialize)]
+struct FolderListing {
+  root: String,
+  entries: Vec<FileEntry>,
 }
 
 #[derive(Serialize)]
@@ -53,20 +61,24 @@ fn ensure_inside(root: &str, path: &str) -> Result<PathBuf, String> {
   }
 }
 
-fn ensure_parent_inside(root: &str, path: &str) -> Result<PathBuf, String> {
-  let requested = PathBuf::from(path);
-  let parent = requested.parent().ok_or("The requested path has no parent.")?;
-  let parent = clean_path(root).and_then(|root_path| {
-    let canonical = parent
-      .canonicalize()
-      .map_err(|error| format!("Unable to access destination: {error}"))?;
-    if canonical == root_path || canonical.starts_with(&root_path) {
-      Ok(canonical)
-    } else {
-      Err("The requested path is outside the selected folder.".into())
+fn validate_item_name(name: &str, windows: bool) -> Result<(), String> {
+  if name.is_empty() || name == "." || name == ".." || name.contains(['/', '\\', '\0']) {
+    return Err("Enter a valid name without path separators.".into());
+  }
+  if windows {
+    let stem = name.split('.').next().unwrap_or("").trim_end().to_uppercase();
+    let reserved = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$")
+      || ["COM", "LPT"].iter().any(|prefix| {
+        stem.strip_prefix(prefix).is_some_and(|suffix| {
+          matches!(suffix, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³")
+        })
+      });
+    if reserved || name.ends_with(['.', ' '])
+      || name.chars().any(|c| c.is_control() || "<>:\"|?*".contains(c)) {
+      return Err("Windows names cannot use reserved device names, control characters, <>:\"|?*, or end in a dot or space.".into());
     }
-  })?;
-  Ok(parent.join(requested.file_name().ok_or("Invalid file name.")?))
+  }
+  Ok(())
 }
 
 fn copy_recursively(source: &Path, destination: &Path) -> Result<(), String> {
@@ -91,8 +103,11 @@ fn should_visit(entry: &walkdir::DirEntry) -> bool {
 }
 
 #[tauri::command]
-fn list_folder(root: String) -> Result<Vec<FileEntry>, String> {
+fn list_folder(root: String) -> Result<FolderListing, String> {
   let root_path = clean_path(&root)?;
+  if !root_path.is_dir() {
+    return Err("The selected path must be a folder.".into());
+  }
   let mut entries = Vec::new();
   for item in WalkDir::new(&root_path).follow_links(false).into_iter().filter_entry(should_visit).filter_map(Result::ok) {
     if item.path() == root_path {
@@ -107,7 +122,16 @@ fn list_folder(root: String) -> Result<Vec<FileEntry>, String> {
     });
   }
   entries.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.relative_path.to_lowercase().cmp(&b.relative_path.to_lowercase())));
-  Ok(entries)
+  Ok(FolderListing { root: root_path.to_string_lossy().into_owned(), entries })
+}
+
+#[tauri::command]
+fn resolve_document_path(root: String, path: String) -> Result<String, String> {
+  let path = ensure_inside(&root, &path)?;
+  if !path.is_file() {
+    return Err("The selected path must be a file.".into());
+  }
+  Ok(path.to_string_lossy().into_owned())
 }
 
 #[tauri::command]
@@ -135,27 +159,33 @@ fn file_stamp(root: String, path: String) -> Result<FileStamp, String> {
 }
 
 #[tauri::command]
-fn create_item(root: String, path: String, directory: bool) -> Result<(), String> {
-  let path = ensure_parent_inside(&root, &path)?;
-  if path.exists() {
-    return Err("An item with that name already exists.".into());
-  }
+fn create_item(root: String, parent: String, name: String, directory: bool) -> Result<String, String> {
+  validate_item_name(&name, cfg!(windows))?;
+  let parent = ensure_inside(&root, &parent)?;
+  let path = parent.join(name);
   if directory {
-    fs::create_dir(&path).map_err(|error| error.to_string())
+    fs::create_dir(&path).map_err(|error| error.to_string())?;
   } else {
-    fs::write(&path, "").map_err(|error| error.to_string())
+    // Exclusive creation also rejects an existing dangling symlink.
+    fs::OpenOptions::new().write(true).create_new(true).open(&path).map_err(|error| error.to_string())?;
   }
+  Ok(path.to_string_lossy().into_owned())
 }
 
 #[tauri::command]
 fn rename_item(root: String, path: String, new_name: String) -> Result<String, String> {
-  if new_name.is_empty() || new_name.contains('/') || new_name.contains('\\') {
-    return Err("Enter a valid name without path separators.".into());
-  }
+  validate_item_name(&new_name, cfg!(windows))?;
   let source = ensure_inside(&root, &path)?;
+  if source == clean_path(&root)? {
+    return Err("The selected root folder cannot be renamed.".into());
+  }
   let destination = source.parent().ok_or("Invalid source path.")?.join(new_name);
-  if destination.exists() {
-    return Err("An item with that name already exists.".into());
+  if let Ok(metadata) = fs::symlink_metadata(&destination) {
+    // Case-only renames on ordinary Windows/macOS volumes address the source
+    // itself. Never overwrite a different file, including in case-sensitive dirs.
+    if metadata.file_type().is_symlink() || destination.canonicalize().ok().as_ref() != Some(&source) {
+      return Err("An item with that name already exists.".into());
+    }
   }
   fs::rename(&source, &destination).map_err(|error| error.to_string())?;
   Ok(destination.to_string_lossy().into_owned())
@@ -208,6 +238,14 @@ fn trash_item(root: String, path: String) -> Result<(), String> {
   if path == clean_path(&root)? {
     return Err("The selected root folder cannot be moved to Trash.".into());
   }
+  #[cfg(windows)]
+  {
+    use std::path::{Component, Prefix};
+    if matches!(path.components().next(), Some(Component::Prefix(prefix))
+      if matches!(prefix.kind(), Prefix::UNC(..) | Prefix::VerbatimUNC(..))) {
+      return Err("Network shares do not provide a local Recycle Bin. Manage this item in File Explorer.".into());
+    }
+  }
   trash::delete(path).map_err(|error| format!("Unable to move item to Trash: {error}"))
 }
 
@@ -250,7 +288,9 @@ fn search_folder(root: String, query: String) -> Result<Vec<SearchMatch>, String
 
 #[tauri::command]
 fn open_path(path: String) -> Result<(), String> {
-  open::that(path).map_err(|error| error.to_string())
+  // Only simplify a verbatim Windows path when doing so preserves its identity.
+  // Keep canonical paths unchanged everywhere in the app's filesystem state.
+  open::that(dunce::simplified(Path::new(&path))).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -260,7 +300,7 @@ fn print_active_document(window: tauri::WebviewWindow, title: String) -> Result<
     .map_err(|error| format!("Unable to set the PDF filename: {error}"))?;
   window
     .print()
-    .map_err(|error| format!("Unable to open the macOS print dialog: {error}"))
+    .map_err(|error| format!("Unable to open the print dialog: {error}"))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -282,6 +322,7 @@ pub fn run() {
     })
     .invoke_handler(tauri::generate_handler![
       list_folder,
+      resolve_document_path,
       read_text_file,
       write_text_file,
       file_stamp,

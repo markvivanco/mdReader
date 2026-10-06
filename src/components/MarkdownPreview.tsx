@@ -4,22 +4,13 @@ import ReactMarkdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeKatex from 'rehype-katex'
 import rehypeRaw from 'rehype-raw'
-import rehypeSanitize, { defaultSchema } from 'rehype-sanitize'
+import rehypeSanitize from 'rehype-sanitize'
 import remarkFrontmatter from 'remark-frontmatter'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
-import { dirname, isMarkdown, resolveRelative } from '../lib/path'
+import { dirname, isMarkdown, markdownUrlTransform, resolveDocumentTarget, resolveImageSource } from '../lib/path'
+import { markdownSchema } from '../lib/markdownSchema'
 import { MermaidDiagram } from './MermaidDiagram'
-
-const safeSchema = {
-  ...defaultSchema,
-  tagNames: [...(defaultSchema.tagNames || []), 'u'],
-  attributes: {
-    ...defaultSchema.attributes,
-    '*': [...(defaultSchema.attributes?.['*'] || []), 'className', 'id', 'title'],
-    code: [...(defaultSchema.attributes?.code || []), ['className', /^language-/]],
-  },
-}
 
 function frontMatter(content: string) {
   const match = content.match(/^---\s*\n([\s\S]*?)\n---\s*(?:\n|$)/)
@@ -45,16 +36,17 @@ export function MarkdownPreview({
       return <code className={className} {...props}>{children}</code>
     },
     img({ src = '', alt, ...props }: ComponentPropsWithoutRef<'img'>) {
-      const resolved = /^(https?:|data:)/i.test(src) ? src : convertFileSrc(resolveRelative(path, src))
+      const resolved = resolveImageSource(path, src, convertFileSrc)
       return <img src={resolved} alt={alt || ''} loading={forPrint ? 'eager' : 'lazy'} {...props} />
     },
     a({ href = '', children, ...props }: ComponentPropsWithoutRef<'a'>) {
       const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
         if (href.startsWith('#')) return
         event.preventDefault()
-        const resolved = resolveRelative(path, href)
-        if (isMarkdown(resolved.split('#')[0])) onOpenMarkdown(resolved.split('#')[0])
-        else void invoke('open_path', { path: resolved })
+        const resolved = resolveDocumentTarget(path, href)
+        if (resolved.kind === 'local' && isMarkdown(resolved.path)) onOpenMarkdown(resolved.path)
+        else if (resolved.kind === 'local') void invoke('open_path', { path: resolved.path })
+        else if (resolved.kind === 'external') void invoke('open_path', { path: resolved.target })
       }
       return <a href={href} onClick={handleClick} {...props}>{children}</a>
     },
@@ -69,8 +61,9 @@ export function MarkdownPreview({
         </details>
       )}
       <ReactMarkdown
+        urlTransform={markdownUrlTransform}
         remarkPlugins={[remarkGfm, remarkMath, remarkFrontmatter]}
-        rehypePlugins={[rehypeRaw, [rehypeSanitize, safeSchema], rehypeKatex, rehypeHighlight]}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSchema], rehypeKatex, rehypeHighlight]}
         components={components}
       >
         {parsed.markdown}

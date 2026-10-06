@@ -13,6 +13,34 @@ dist-ssr
 tmp/
 *.local
 
+# Local configuration and credentials (the app needs no .env file)
+.env
+.env.*
+!.env.example
+!.env.sample
+.npmrc
+.pnpmrc
+.pypirc
+.netrc
+
+# Private keys and signing material
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+*.mobileprovision
+*.provisionprofile
+id_rsa
+id_ed25519
+
+# Local tool metadata and developer artifacts
+.codex/
+.agents/
+.aws/
+coverage/
+
 # Editor directories and files
 .idea
 .DS_Store
@@ -21,4 +49,3 @@ tmp/
 *.njsproj
 *.sln
 *.sw?
-.gitignore

@@ -10,6 +10,11 @@ export type FileStamp = {
   size: number
 }
 
+export type FolderListing = {
+  root: string
+  entries: FileEntry[]
+}
+
 export type SearchMatch = {
   path: string
   relativePath: string

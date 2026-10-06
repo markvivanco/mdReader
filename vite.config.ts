@@ -12,6 +12,7 @@ if (typeof tauriConfig.version !== 'string') {
 
 // https://vite.dev/config/
 export default defineConfig({
+  server: { port: 1420, strictPort: true },
   plugins: [
     react(),
     {
