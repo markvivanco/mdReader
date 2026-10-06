@@ -810,7 +810,7 @@ function App() {
                     className={selectedTypes !== null ? 'filter-active' : ''}
                     onClick={() => { setMenuOpen(false); setFilterOpen(!filterOpen) }}
                     disabled={!state.root || !availableTypes.length}
-                    title="Filter by file type"
+                    title="Filter by Markdown file type"
                     aria-expanded={filterOpen}
                   >
                     <Filter size={15} />
@@ -818,7 +818,7 @@ function App() {
                   {filterOpen && (
                     <div className="filter-menu">
                       <div className="filter-menu-heading">
-                        <strong>File types</strong>
+                        <strong>Markdown types</strong>
                         <div className="filter-bulk-actions">
                           <button onClick={() => setSelectedTypes(null)}>Select all</button>
                           <button onClick={() => setSelectedTypes(new Set())}>Deselect all</button>
@@ -849,7 +849,7 @@ function App() {
                         })}
                       </div>
                       <div className="filter-summary">
-                        {selectedTypes === null ? 'Showing all types' : `${selectedTypes.size} of ${availableTypes.length} selected`}
+                        {selectedTypes === null ? 'Showing all Markdown files' : `${selectedTypes.size} of ${availableTypes.length} selected`}
                       </div>
                     </div>
                   )}
@@ -884,7 +884,7 @@ function App() {
                 onMove={(source, destination) => void moveItem(source, destination)}
               />
             ) : (
-              <div className="empty-sidebar"><FolderOpen size={32} /><p>Choose a folder to browse its Markdown files and assets.</p><button onClick={chooseFolder}>Open Folder</button></div>
+              <div className="empty-sidebar"><FolderOpen size={32} /><p>Choose a folder to browse its Markdown files.</p><button onClick={chooseFolder}>Open Folder</button></div>
             )}
             <div
               className="resize-handle"

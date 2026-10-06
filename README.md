@@ -42,7 +42,7 @@ Documents remain ordinary files on your filesystem. There is no account, applica
 
 ### Files, search, and export
 
-- Browse a selected folder recursively in a collapsible, resizable sidebar, with file-type filtering.
+- Browse Markdown files and folders recursively in a collapsible, resizable sidebar, with filtering by Markdown extension.
 - Create documents and folders; rename, duplicate, drag to move, or send local items to macOS Trash / Windows Recycle Bin.
 - Follow relative Markdown links, display local images, and open other file types with their OS handler.
 - Search the active document or saved Markdown files below the selected folder.
@@ -175,11 +175,11 @@ Similarly, `pnpm build` followed by `pnpm preview` serves compiled frontend asse
 
 ### Browse folders and tabs
 
-Choose **Open a Folder**, then select a Markdown file in the sidebar. Each document opens in a tab. Selecting a non-Markdown file hands it to the operating system's associated application.
+Choose **Open a Folder**, then select a Markdown file in the sidebar. Each document opens in a tab. The sidebar shows folders and supported Markdown files (`.md`, `.markdown`, `.mdown`, and `.mkd`, case-insensitively). Other file types are hidden; documents can still reference local images and link to other files.
 
 Enumeration excludes dot-prefixed files/directories, `node_modules`, and `target`. It does not interpret `.gitignore`. Use the refresh button after another program adds, removes, or renames files; content polling for open documents is separate from tree refresh.
 
-The extension filter supports selecting and deselecting file types. Parent folders remain visible for matching descendants. Drag the sidebar boundary to resize it between 220 and 520 pixels.
+The extension filter supports selecting and deselecting Markdown file types. Folders, including empty folders, are visible by default; when filtering extensions, parent folders remain visible for matching descendants. Drag the sidebar boundary to resize it between 220 and 520 pixels.
 
 ### Read, edit, and save
 
@@ -361,7 +361,7 @@ There is no settings file or required environment configuration. Defaults live i
 | `src/store/useAppStore.ts` | Initial in-memory documents, folder, sidebar, and search state. |
 | `src/index.css`, `src/App.css`, `src/splash.css` | Appearance, reader/editor styles, print layout, startup animation. |
 
-The application version is **0.1.1**, aligned in Tauri configuration, Cargo, Cargo's lockfile entry, and `package.json`. The splash screen reads the Tauri version. `package.json` keeps `private: true` to prevent accidental npm publication; that flag does not control GitHub visibility. Keep these versions aligned before releases.
+The application version is **0.1.2**, aligned in Tauri configuration, Cargo, Cargo's lockfile entry, and `package.json`. The splash screen reads the Tauri version. `package.json` keeps `private: true` to prevent accidental npm publication; that flag does not control GitHub visibility. Keep these versions aligned before releases.
 
 The native window defaults to 1440 × 900 with a 980 × 640 minimum. To change development port 1420, update both `build.devUrl` and `build.beforeDevCommand`.
 

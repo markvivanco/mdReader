@@ -102,6 +102,12 @@ fn should_visit(entry: &walkdir::DirEntry) -> bool {
   !name.starts_with('.') && name != "node_modules" && name != "target"
 }
 
+fn is_markdown_path(path: &Path) -> bool {
+  path.extension().and_then(|value| value.to_str())
+    .map(|extension| matches!(extension.to_ascii_lowercase().as_str(), "md" | "markdown" | "mdown" | "mkd"))
+    .unwrap_or(false)
+}
+
 #[tauri::command]
 fn list_folder(root: String) -> Result<FolderListing, String> {
   let root_path = clean_path(&root)?;
@@ -110,7 +116,7 @@ fn list_folder(root: String) -> Result<FolderListing, String> {
   }
   let mut entries = Vec::new();
   for item in WalkDir::new(&root_path).follow_links(false).into_iter().filter_entry(should_visit).filter_map(Result::ok) {
-    if item.path() == root_path {
+    if item.path() == root_path || (!item.file_type().is_dir() && !is_markdown_path(item.path())) {
       continue;
     }
     let relative = item.path().strip_prefix(&root_path).map_err(|error| error.to_string())?;
@@ -259,8 +265,7 @@ fn search_folder(root: String, query: String) -> Result<Vec<SearchMatch>, String
   let mut matches = Vec::new();
   for item in WalkDir::new(&root_path).follow_links(false).into_iter().filter_entry(should_visit).filter_map(Result::ok) {
     let path = item.path();
-    let is_markdown = path.extension().and_then(|value| value.to_str()).map(|ext| matches!(ext.to_lowercase().as_str(), "md" | "markdown" | "mdown" | "mkd")).unwrap_or(false);
-    if !item.file_type().is_file() || !is_markdown {
+    if !item.file_type().is_file() || !is_markdown_path(path) {
       continue;
     }
     let Ok(contents) = fs::read_to_string(path) else { continue };
