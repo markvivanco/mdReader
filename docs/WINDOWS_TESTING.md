@@ -14,7 +14,7 @@ pnpm test
 pnpm lint
 pnpm build
 cargo test --locked --manifest-path src-tauri/Cargo.toml
-pnpm exec tauri build --bundles nsis msi -- --locked
+node node_modules/@tauri-apps/cli/tauri.js build --bundles nsis msi -- --locked
 ```
 
 The `Desktop checks and Windows installers` GitHub Actions workflow runs these

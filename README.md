@@ -314,7 +314,7 @@ The default build targets the host architecture. Universal macOS builds and Linu
 Run the build on Windows after installing the prerequisites:
 
 ```powershell
-pnpm exec tauri build --bundles nsis msi -- --locked
+node node_modules/@tauri-apps/cli/tauri.js build --bundles nsis msi -- --locked
 ```
 
 Default outputs:
@@ -329,7 +329,7 @@ src-tauri/target/release/
 
 The `.exe` setup uses NSIS; `.msi` uses WiX. MSI creation requires Windows and its VBScript optional feature. If WiX reports `failed to run light.exe`, check VBScript availability, or build only `--bundles nsis`. By default, Tauri's installer downloads WebView2's bootstrapper if the runtime is missing, requiring internet access. See [Tauri's installer documentation](https://v2.tauri.app/distribute/windows-installer/) for offline runtime packaging and installer options.
 
-Use `pnpm exec` here to preserve Cargo's `-- --locked` arguments, and list bundle types as separate arguments so PowerShell does not convert a comma-separated list into one space-containing argument.
+Invoke the installed Tauri CLI directly with Node here to preserve Cargo's `-- --locked` arguments through PowerShell. The package manager's PowerShell launcher can consume the separator. List bundle types as separate arguments so PowerShell does not convert a comma-separated list into one space-containing argument.
 
 Installed-app users do not need Node, Rust, pnpm, or C++ build tools. Install and launch each installer on a clean machine and complete [Windows acceptance](docs/WINDOWS_TESTING.md) before distribution. Windows 10/11 x64 is the intended initial target; ARM64 and older Windows versions are not certified by this repository.
 
