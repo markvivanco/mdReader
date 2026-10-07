@@ -9,6 +9,7 @@ Documents remain ordinary files on your filesystem. There is no account, applica
 ## Contents
 
 - [Features](#features)
+- [Screenshots](#screenshots)
 - [Requirements](#requirements)
 - [Installation and setup](#installation-and-setup)
 - [Using mdReader](#using-mdreader)
@@ -50,6 +51,26 @@ Documents remain ordinary files on your filesystem. There is no account, applica
 - Check open files for external changes and review conflicts with unsaved edits.
 - Review unsaved documents when closing tabs, changing folders, or quitting.
 - Print a snapshot of the active document, including unsaved edits, or save it as PDF through the platform's print dialog.
+
+## Screenshots
+
+### Preview mode
+
+View formatted Markdown with headings, links, and lists.
+
+![mdReader displaying formatted Markdown in Preview mode](docs/screenshots/preview-mode.png)
+
+### Raw mode
+
+View the Markdown source with syntax highlighting and line numbers.
+
+![mdReader displaying Markdown source in Raw mode](docs/screenshots/raw-mode.png)
+
+### WYSIWYG editing
+
+Enable **Edit** in Preview mode to edit the formatted document using the visual editor and formatting toolbar.
+
+![mdReader editing a Markdown document in the WYSIWYG editor](docs/screenshots/wysiwyg-editing.png)
 
 ## Requirements
 
@@ -184,6 +205,8 @@ The extension filter supports selecting and deselecting Markdown file types. Fol
 ### Read, edit, and save
 
 Files open read-only. **Preview** displays formatted content; **Raw** displays source with line numbers. Enable **Edit** to make changes in either mode. Preview editing activates the visual editor and formatting toolbar.
+
+Click a tab's **Preview** or **Raw** badge to switch that document to the other mode and activate its tab. The **Preview / Raw** controls in the top toolbar also switch the active document's mode.
 
 Save using the toolbar, **Command-S** on macOS, or **Ctrl-S** on Windows. Edits are not autosaved. Turning Edit off changes the interaction mode without saving or discarding changes. Switching tabs or modes flushes pending rich-editor changes into the in-memory document.
 
@@ -361,7 +384,7 @@ There is no settings file or required environment configuration. Defaults live i
 | `src/store/useAppStore.ts` | Initial in-memory documents, folder, sidebar, and search state. |
 | `src/index.css`, `src/App.css`, `src/splash.css` | Appearance, reader/editor styles, print layout, startup animation. |
 
-The application version is **0.1.2**, aligned in Tauri configuration, Cargo, Cargo's lockfile entry, and `package.json`. The splash screen reads the Tauri version. `package.json` keeps `private: true` to prevent accidental npm publication; that flag does not control GitHub visibility. Keep these versions aligned before releases.
+The application version is **0.1.3**, aligned in Tauri configuration, Cargo, Cargo's lockfile entry, and `package.json`. The splash screen reads the Tauri version. `package.json` keeps `private: true` to prevent accidental npm publication; that flag does not control GitHub visibility. Keep these versions aligned before releases.
 
 The native window defaults to 1440 × 900 with a 980 × 640 minimum. To change development port 1420, update both `build.devUrl` and `build.beforeDevCommand`.
 
