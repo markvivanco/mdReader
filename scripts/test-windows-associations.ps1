@@ -4,15 +4,18 @@ if ($env:GITHUB_ACTIONS -ne 'true') {
   throw 'This installer test is restricted to disposable GitHub Actions runners.'
 }
 
-function Assert-Associations {
+function Assert-Associations([string]$installerFormat) {
   foreach ($extension in @('md', 'markdown', 'mdown', 'mkd')) {
     $key = Get-Item "Registry::HKEY_CLASSES_ROOT\.$extension"
     $class = $key.GetValue('')
-    if ($class -ne 'mdReader.Markdown') { throw "Missing mdReader association for .$extension ($class)" }
+    # Tauri's NSIS package uses the configured name; WiX advertises a separate
+    # product-name/extension ProgID for each file type.
+    $expectedClass = if ($installerFormat -eq 'NSIS') { 'mdReader.Markdown' } else { "mdReader.$extension" }
+    if ($class -ne $expectedClass) { throw "Missing mdReader association for .$extension ($class)" }
     $command = (Get-Item "Registry::HKEY_CLASSES_ROOT\$class\shell\open\command").GetValue('')
     if ($command -notmatch '^"([^"]+\.exe)"\s+"%1"$') { throw "Unquoted or invalid open command: $command" }
     if (!(Test-Path -LiteralPath $Matches[1])) { throw "Associated application does not exist: $command" }
-    Write-Host "Verified .$extension registration and quoted executable/document paths."
+    Write-Host "Verified $installerFormat .$extension registration and quoted executable/document paths."
   }
 }
 
@@ -31,7 +34,7 @@ $newUserExtensionKeys = @('md', 'markdown', 'mdown', 'mkd') | ForEach-Object {
   if (!(Test-Path $key)) { $key }
 }
 Run-Installer $nsis[0].FullName "/S /D=$installDir"
-try { Assert-Associations }
+try { Assert-Associations 'NSIS' }
 finally {
   Run-Installer (Join-Path $installDir 'uninstall.exe') '/S'
   # NSIS can leave an empty extension value after uninstall. Remove only keys
@@ -42,5 +45,5 @@ finally {
 }
 
 Run-Installer 'msiexec.exe' "/i `"$($msi[0].FullName)`" /qn /norestart"
-try { Assert-Associations }
+try { Assert-Associations 'MSI' }
 finally { Run-Installer 'msiexec.exe' "/x `"$($msi[0].FullName)`" /qn /norestart" }
