@@ -19,6 +19,8 @@ node node_modules/@tauri-apps/cli/tauri.js build --bundles nsis msi -- --locked
 
 The `Desktop checks and Windows installers` GitHub Actions workflow runs these
 checks on native Windows x64 and retains unsigned installers as workflow artifacts.
+It also installs/uninstalls both packages on the disposable runner and verifies
+the four Markdown registry associations and quoting of the executable/file paths.
 It also runs regression checks on macOS. It does not publish a GitHub release,
 sign installers, or perform the manual checks below.
 
@@ -50,6 +52,8 @@ $fixture
 | Area | Check and expected result |
 | --- | --- |
 | Installation | Install and launch each generated installer on a clean Windows machine. Verify the installed app and icon, then uninstall. Check WebView2 installation when missing. |
+| File associations | After each installer, use **Open with** to open `.md`, `.markdown`, `.mdown`, and `.mkd` in mdReader; set it as the default and double-click. Repeat with the app closed, running, and minimized. The existing window is focused and the file opens in read-only Preview. |
+| Multiple OS opens | Open files from two different folders, including spaces, Unicode, `#`, `%`, uppercase extensions, and a UNC share if available. Keep an unsaved edit in the first tab. Further opens preserve it; opening that same file again selects one tab. Save each file and verify the correct file on disk changed. Test a missing file and a non-Markdown file as command-line arguments. |
 | Folder tree | Open the fixture. Nested entries appear inside their parents; filtering preserves ancestor folders. Refresh keeps the tree usable. |
 | Paths | Use spaces, Unicode, `#` and `%` in filenames. Test a drive root, a folder with a long path, and an accessible UNC share. Keep long-path OS-handler limitations separate from native read/save results. |
 | Identity | Open one file via tree, search and a relative link. They select one tab. If available, use a case-sensitive Windows directory containing both `a.md` and `A.md`; they must remain separate. |

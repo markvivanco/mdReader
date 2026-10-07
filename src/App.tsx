@@ -13,6 +13,7 @@ import { MarkdownPreview } from './components/MarkdownPreview'
 import { RawEditor } from './components/RawEditor'
 import { RichMarkdownEditor, type RichMarkdownEditorHandle } from './components/RichMarkdownEditor'
 import { createOpenDocument, documentViewState, selectDocumentSurface } from './lib/documentState'
+import { createOpenFileReceiver, type OpenFileRequest } from './lib/openFiles'
 import { dirname, displayName, isMarkdown, isPathWithin, rebasePath, samePath } from './lib/path'
 import { desktopPlatform, primaryModifier, shortcutLabel, trashName } from './lib/platform'
 import { printInWebview } from './lib/printing'
@@ -186,6 +187,8 @@ function App() {
   const printingRef = useRef(false)
   const richEditorRef = useRef<RichMarkdownEditorHandle>(null)
   const closingWindowRef = useRef(false)
+  const choosingFolderRef = useRef(false)
+  const openingFilesRef = useRef(false)
   const createMarkdownFileRef = useRef<() => Promise<void>>(async () => {})
   const exportActiveDocumentRef = useRef<() => Promise<void>>(async () => {})
   const active = state.documents.find((document) => document.path === state.activePath) || null
@@ -262,6 +265,8 @@ function App() {
   }, [state.root, state.set])
 
   const chooseFolder = async () => {
+    if (openingFilesRef.current || choosingFolderRef.current) return false
+    choosingFolderRef.current = true
     try {
       const selected = await open({ directory: true, multiple: false, title: 'Choose a Markdown folder' })
       if (!selected) return false
@@ -278,19 +283,24 @@ function App() {
       console.error('Unable to open folder picker', error)
       await message(String(error), { title: 'Unable to open folder', kind: 'error' })
       return false
+    } finally {
+      choosingFolderRef.current = false
     }
   }
 
-  const openDocument = useCallback(async (path: string, jumpLine?: number) => {
+  const openDocument = useCallback(async (path: string, jumpLine?: number, suppliedRoot?: string) => {
     const current = useAppStore.getState()
-    if (!current.root || !isMarkdown(path)) {
+    const activeDocument = current.documents.find((document) => document.path === current.activePath)
+    const root = suppliedRoot ?? (current.root && isPathWithin(path, current.root)
+      ? current.root : activeDocument?.root ?? current.root)
+    if (!root || !isMarkdown(path)) {
       if (path) await invoke('open_path', { path })
       return
     }
     try {
       // The dialog, links, drive-letter case and Rust's verbatim paths can spell
       // one file differently. Use native identity before selecting/creating tabs.
-      path = await invoke<string>('resolve_document_path', { root: current.root, path })
+      path = await invoke<string>('resolve_document_path', { root, path })
     } catch (error) {
       await message(String(error), { title: 'Unable to open file', kind: 'error' })
       return
@@ -319,8 +329,8 @@ function App() {
       return
     }
     try {
-      const [content, stamp] = await Promise.all([api.read(latest.root!, path), api.stamp(latest.root!, path)])
-      const document = createOpenDocument({ path, name: displayName(path), content, stamp, jumpLine })
+      const [content, stamp] = await Promise.all([api.read(root, path), api.stamp(root, path)])
+      const document = createOpenDocument({ root, path, name: displayName(path), content, stamp, jumpLine })
       const afterRead = useAppStore.getState()
       if (afterRead.root !== latest.root) return
       const documents = afterRead.documents.some((openDocument) => openDocument.path === path)
@@ -332,16 +342,47 @@ function App() {
     }
   }, [flushDocument])
 
+  const openRequestedDocument = useCallback(async (request: OpenFileRequest) => {
+    openingFilesRef.current = true
+    try {
+      const file = await invoke<{ root: string; path: string }>('resolve_open_file', { requestId: request.id })
+      if (!useAppStore.getState().root) {
+        // Only the first OS-opened file chooses a sidebar folder. Later opens
+        // keep the user's workspace and unsaved tabs, even across directories.
+        const folder = await api.list(file.root)
+        useAppStore.getState().set({ ...folder, expanded: new Set<string>() })
+      }
+      const workspaceRoot = useAppStore.getState().root!
+      await openDocument(file.path, undefined, isPathWithin(file.path, workspaceRoot) ? workspaceRoot : file.root)
+    } finally {
+      openingFilesRef.current = false
+    }
+  }, [openDocument])
+
+  const [fileReceiver] = useState(() => createOpenFileReceiver({
+    subscribe: (notify) => listen('open-files-pending', notify),
+    pending: () => invoke<OpenFileRequest[]>('pending_open_files'),
+    open: openRequestedDocument,
+    acknowledge: (requestId) => invoke('acknowledge_open_file', { requestId }),
+    canOpen: () => !closingWindowRef.current && !choosingFolderRef.current,
+    reportError: async (error) => { await message(String(error), { title: 'Unable to open file', kind: 'error' }) },
+  }))
+
+  useEffect(() => {
+    fileReceiver.start()
+    return () => fileReceiver.stop()
+  }, [fileReceiver])
+
   const saveDocument = useCallback(async (requestedDocument?: OpenDocument | null) => {
     const current = useAppStore.getState()
     const target = requestedDocument
       ?? current.documents.find((document) => document.path === current.activePath)
       ?? null
-    if (!target || !current.root) return false
+    if (!target) return false
     const document = await flushDocument(target.path, { preserveFocus: true })
     if (!document) return false
     try {
-      const stamp = await invoke<FileStamp>('write_text_file', { root: current.root, path: document.path, contents: document.content })
+      const stamp = await invoke<FileStamp>('write_text_file', { root: document.root, path: document.path, contents: document.content })
       useAppStore.getState().updateDocument(document.path, { savedContent: document.content, stamp })
       return true
     } catch (error) {
@@ -436,7 +477,7 @@ function App() {
         const documents = current.documents.map((document) => {
           const path = rebasePath(document.path, selected.path, newPath)
           if (path === document.path) return document
-          return { ...document, path, name: displayName(path) }
+          return { ...document, root: state.root!, path, name: displayName(path) }
         })
         const activePath = current.activePath ? rebasePath(current.activePath, selected.path, newPath) : null
         const expanded = new Set([...current.expanded].map((path) => rebasePath(path, selected.path, newPath)))
@@ -470,7 +511,7 @@ function App() {
       const documents = current.documents.map((document) => {
         const path = rebasePath(document.path, source, newPath)
         if (path === document.path) return document
-        return { ...document, path, name: displayName(path) }
+        return { ...document, root: state.root!, path, name: displayName(path) }
       })
       const activePath = current.activePath ? rebasePath(current.activePath, source, newPath) : null
       const expanded = new Set([...current.expanded].map((path) => rebasePath(path, source, newPath)))
@@ -639,24 +680,24 @@ function App() {
   }, [state.root, state.searchQuery, state.searchScope, active?.content, active?.path])
 
   useEffect(() => {
-    if (!state.root || !state.documents.length) return
+    if (!state.documents.length) return
     const timer = window.setInterval(async () => {
       if (closingWindowRef.current) return
       for (const document of useAppStore.getState().documents) {
         try {
-          const stamp = await api.stamp(state.root!, document.path)
+          const stamp = await api.stamp(document.root, document.path)
           if (stamp.modifiedMs === document.stamp.modifiedMs && stamp.size === document.stamp.size) continue
           const localDocument = await flushDocument(document.path)
           if (!localDocument) continue
           if (localDocument.content === localDocument.savedContent) {
-            const content = await api.read(state.root!, document.path)
+            const content = await api.read(localDocument.root, document.path)
             state.updateDocument(document.path, { content, savedContent: content, stamp })
           } else {
             const reload = await ask(`“${localDocument.name}” changed on disk while you have unsaved edits. Reload it and discard your edits?`, {
               title: 'File conflict', kind: 'warning', okLabel: 'Reload', cancelLabel: 'Keep My Edits',
             })
             if (reload) {
-              const content = await api.read(state.root!, document.path)
+              const content = await api.read(localDocument.root, document.path)
               state.updateDocument(document.path, { content, savedContent: content, stamp })
             } else state.updateDocument(document.path, { stamp })
           }

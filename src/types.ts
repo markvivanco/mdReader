@@ -24,6 +24,7 @@ export type SearchMatch = {
 }
 
 export type OpenDocument = {
+  root: string
   path: string
   name: string
   content: string
