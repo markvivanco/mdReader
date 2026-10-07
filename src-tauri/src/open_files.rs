@@ -160,8 +160,14 @@ mod tests {
   fn file_urls_decode_unicode_spaces_and_literal_percent_once() {
     let root = fixture();
     let path = root.join("café #1%20.mkd");
+    fs::write(&path, "# URL file").unwrap();
     let url = tauri::Url::from_file_path(&path).unwrap();
-    assert_eq!(url.to_file_path().unwrap(), path);
+    let decoded = url.to_file_path().unwrap();
+    assert_eq!(decoded.file_name(), path.file_name());
+    let files = OpenFiles::default();
+    files.enqueue([decoded]);
+    let opened = files.resolve(files.pending()[0].id).unwrap();
+    assert_eq!(PathBuf::from(opened.path), path);
     assert!(tauri::Url::parse("https://example.com/file.md").unwrap().to_file_path().is_err());
     fs::remove_dir_all(root).unwrap();
   }
