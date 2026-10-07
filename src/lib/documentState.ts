@@ -5,6 +5,7 @@ export type DocumentSurface = 'preview' | 'rich-editor' | 'raw-editor'
 type DocumentViewState = Pick<OpenDocument, 'mode' | 'editing' | 'jumpLine'>
 
 type OpenDocumentInput = {
+  root: string
   path: string
   name: string
   content: string
@@ -21,6 +22,7 @@ export function documentViewState(jumpLine?: number): DocumentViewState {
 }
 
 export function createOpenDocument({
+  root,
   path,
   name,
   content,
@@ -28,6 +30,7 @@ export function createOpenDocument({
   jumpLine,
 }: OpenDocumentInput): OpenDocument {
   return {
+    root,
     path,
     name,
     content,

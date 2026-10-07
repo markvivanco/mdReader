@@ -34,6 +34,7 @@ Documents remain ordinary files on your filesystem. There is no account, applica
 
 - Open `.md`, `.markdown`, `.mdown`, and `.mkd` files, with case-insensitive extension matching.
 - Keep multiple documents open in tabs.
+- Open Markdown files from Finder or Windows Explorer into the existing app window, including files from different folders.
 - Start in read-only Preview mode; explicitly enable **Edit** to make changes.
 - Use the rich editor in Preview mode or CodeMirror in Raw mode.
 - Format headings, emphasis, lists, links, images, tables, quotes, code blocks, math, footnotes, and front matter.
@@ -193,6 +194,19 @@ Open the URL Vite prints to inspect the frontend shell and styling. A normal bro
 Similarly, `pnpm build` followed by `pnpm preview` serves compiled frontend assets for inspection. It does not provide a fully functional browser edition of mdReader.
 
 ## Using mdReader
+
+### Open Markdown files from Finder or Explorer
+
+Version 0.1.4 registers `.md`, `.markdown`, `.mdown`, and `.mkd` as supported file types in the macOS app bundle and Windows installers. Install the new build before using these associations; running the development server or copying the Windows executable alone does not install them.
+
+- **macOS:** copy `mdReader.app` into Applications. In Finder, select a Markdown file, choose **Get Info**, expand **Open with**, select **mdReader**, and click **Change All…** to use it for that extension. **Open With → mdReader** opens just the selected file without changing the default.
+- **Windows:** install mdReader using the `.exe` or `.msi` installer. Right-click a Markdown file, choose **Open with → Choose another app**, select **mdReader**, and choose **Always**. Alternatively, choose mdReader for the extension under **Settings → Apps → Default apps**. Repeat for each Markdown extension you use.
+
+With mdReader selected as the default, double-clicking a Markdown file opens it in a tab. The app handles files received during startup and forwards subsequent launches to the existing window. Files already open select their existing tabs without replacing unsaved edits. New documents start in read-only Preview mode.
+
+The first file opened this way sets the sidebar to its parent folder. Later files from other folders open in additional tabs while keeping the sidebar's current folder. Saving, checking for external changes, and following local links use each document's own folder scope. Choosing **Open Folder** still reviews and closes existing tabs before changing the workspace.
+
+File associations advertise mdReader as a supported application; the operating system retains control over the user's default-app choice. Missing, inaccessible, or unsupported files do not run external commands and produce an error or are ignored.
 
 ### Browse folders and tabs
 
@@ -358,7 +372,7 @@ Installed-app users do not need Node, Rust, pnpm, or C++ build tools. Install an
 
 ### Continuous integration
 
-[`.github/workflows/desktop.yml`](.github/workflows/desktop.yml) runs frontend build/lint/tests and native Rust tests on macOS and Windows for pull requests, pushes to `main`, and manual dispatch. The Windows job also builds NSIS and MSI packages and retains them for 14 days under the workflow's **Artifacts** section as `mdReader-windows-x64-unsigned`. Actions are pinned to commits, permissions are read-only, and repository credentials are not persisted in the checkout.
+[`.github/workflows/desktop.yml`](.github/workflows/desktop.yml) runs frontend build/lint/tests and native Rust tests on macOS and Windows for pull requests, pushes to `main`, and manual dispatch. The Windows job also builds NSIS and MSI packages, installs/uninstalls both on the disposable runner, and checks all four Markdown associations and quoted executable/file paths in the registry. It retains installers for 14 days under the workflow's **Artifacts** section as `mdReader-windows-x64-unsigned`. Actions are pinned to commits, permissions are read-only, and repository credentials are not persisted in the checkout.
 
 The workflow must succeed for the revision being tested. Adding it does not establish that a Windows run has passed; manual WebView2/dialog/installer checks remain separate.
 
@@ -384,7 +398,7 @@ There is no settings file or required environment configuration. Defaults live i
 | `src/store/useAppStore.ts` | Initial in-memory documents, folder, sidebar, and search state. |
 | `src/index.css`, `src/App.css`, `src/splash.css` | Appearance, reader/editor styles, print layout, startup animation. |
 
-The application version is **0.1.3**, aligned in Tauri configuration, Cargo, Cargo's lockfile entry, and `package.json`. The splash screen reads the Tauri version. `package.json` keeps `private: true` to prevent accidental npm publication; that flag does not control GitHub visibility. Keep these versions aligned before releases.
+The application version is **0.1.4**, aligned in Tauri configuration, Cargo, Cargo's lockfile entry, and `package.json`. The splash screen reads the Tauri version. `package.json` keeps `private: true` to prevent accidental npm publication; that flag does not control GitHub visibility. Keep these versions aligned before releases.
 
 The native window defaults to 1440 × 900 with a 980 × 640 minimum. To change development port 1420, update both `build.devUrl` and `build.beforeDevCommand`.
 
@@ -416,6 +430,8 @@ Native window / system webview
 | `src-tauri/src/lib.rs` | Native initialization and filesystem/search/open/print commands. |
 | `src-tauri/src/filesystem_tests.rs` | Filesystem round trips, boundaries, names, and Windows-only path/rename tests. |
 | `src-tauri/src/quit.rs` | Close/exit state machine, acknowledgements/timeouts, macOS termination hook, Rust tests. |
+| `src-tauri/src/open_files.rs`, `src/lib/openFiles.ts` | Queued OS file-open requests, frontend delivery, acknowledgements, and regression tests. |
+| `src-tauri/windows/file-associations.nsh`, `scripts/test-windows-associations.ps1` | Quoted Windows launch command and disposable CI installer/registry checks. |
 | `src-tauri/src/main.rs`, `src-tauri/build.rs` | Native executable entry and Tauri build integration. |
 | `src-tauri/icons/` | Application icons and source icon images. |
 | `public/` | Static build assets, including legacy Font Awesome files. |
@@ -425,6 +441,7 @@ Native command groups:
 - Reads/search: `list_folder`, `resolve_document_path`, `read_text_file`, `file_stamp`, `search_folder`.
 - Writes/file management: `write_text_file`, `create_item`, `rename_item`, `move_item`, `duplicate_item`, `trash_item`.
 - OS integration: `open_path`, `print_active_document`.
+- Incoming files: `pending_open_files`, `resolve_open_file`, `acknowledge_open_file`.
 - Quit: `close_listener_ready`, `close_listener_unready`, `ack_close_request`, `resolve_close_request`.
 
 There is no HTTP API server. The JavaScript shell-plugin dependency is present, but external opening currently uses the custom Rust `open_path` command backed by the Rust `open` crate.
@@ -507,6 +524,8 @@ Do not paste credentials into public issues. If a credential is ever committed, 
 
 ## Testing
 
+The 0.1.4 file-association work passed 41 TypeScript tests and 22 Rust tests on macOS, lint, the frontend build, and a macOS release bundle build. An isolated native macOS app verified startup and later Finder opens, command-line forwarding to the existing window, multiple files, duplicate-tab selection, unsaved rich edits, cross-folder relative links, saving to each file's own folder, and external-change reloads. The shipping macOS bundle's four extension declarations were inspected. Windows installer/registry checks run in CI; interactive Windows file opening still requires the manual checklist.
+
 The 2026-10-06 Windows compatibility work passed 37 TypeScript tests, 17 Rust tests on macOS, lint, the frontend build, and native compile checks using frozen dependencies (`--ignore-scripts`). Native Windows x64 CI also passed the 37 TypeScript tests and 16 Rust tests, including extended-length paths and case-only renames. The frontend build emitted a large-chunk warning. Check the CI run for the exact revision's installer-build status; manual WebView2 UI and installed-app acceptance remain outstanding.
 
 A macOS debug `.app` bundle also built successfully. A native smoke test verified folder selection/nesting, relative-link navigation without duplicate tabs, Raw editing and keyboard save with CRLF verified on disk, creating a filename containing `#`, renaming a folder with open descendant tabs, and clean quitting. It did not exercise Windows or actual PDF output.
@@ -561,7 +580,7 @@ Use disposable test files rather than important documents for file operations.
 - Cross-document heading navigation is not implemented. Native external file handlers and recycling may impose their own path-length/filesystem restrictions.
 - Rich editing can normalize formatting or require Raw fallback.
 - External structural changes require sidebar refresh.
-- No configured file associations, updater, or automated release publishing/signing. CI installer artifacts are unsigned test builds.
+- No updater or automated release publishing/signing. CI installer artifacts are unsigned test builds.
 - Minimum macOS version, signing, and universal builds are not verified by the existing checks.
 
 ## Contributing

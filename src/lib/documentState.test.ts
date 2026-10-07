@@ -10,6 +10,7 @@ const stamp = { modifiedMs: 123, size: 7 }
 
 test('ordinary document opens default to Preview in read-only mode', () => {
   const document = createOpenDocument({
+    root: '/notes',
     path: '/notes/readme.md',
     name: 'readme.md',
     content: '# Hello',
@@ -17,6 +18,7 @@ test('ordinary document opens default to Preview in read-only mode', () => {
   })
 
   assert.deepEqual(document, {
+    root: '/notes',
     path: '/notes/readme.md',
     name: 'readme.md',
     content: '# Hello',

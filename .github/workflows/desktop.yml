@@ -57,3 +57,7 @@ jobs:
           path: |
             src-tauri/target/release/bundle/nsis/*-setup.exe
             src-tauri/target/release/bundle/msi/*.msi
+      - name: Verify installed Windows file associations
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/test-windows-associations.ps1

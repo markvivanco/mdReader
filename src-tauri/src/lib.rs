@@ -7,6 +7,7 @@ use std::{
 use walkdir::WalkDir;
 
 mod quit;
+mod open_files;
 #[cfg(test)]
 mod filesystem_tests;
 
@@ -310,7 +311,16 @@ fn print_active_document(window: tauri::WebviewWindow, title: String) -> Result<
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-  let app = tauri::Builder::default()
+  let files = open_files::OpenFiles::default();
+  if let Ok(cwd) = std::env::current_dir() {
+    files.enqueue(open_files::argument_paths(std::env::args_os(), &cwd));
+  }
+  let builder = tauri::Builder::default().manage(files);
+  #[cfg(desktop)]
+  let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+    open_files::receive(app, open_files::argument_paths(args.into_iter().map(Into::into), Path::new(&cwd)));
+  }));
+  let app = builder
     .manage(QuitCoordinator::default())
     .plugin(tauri_plugin_dialog::init())
     .on_window_event(|window, event| {
@@ -339,6 +349,9 @@ pub fn run() {
       search_folder,
       open_path,
       print_active_document,
+      open_files::pending_open_files,
+      open_files::resolve_open_file,
+      open_files::acknowledge_open_file,
       quit::close_listener_ready,
       quit::close_listener_unready,
       quit::ack_close_request,
@@ -370,6 +383,10 @@ pub fn run() {
     .expect("error while building tauri application");
 
   app.run(|app_handle, event| {
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    if let tauri::RunEvent::Opened { ref urls } = event {
+      open_files::receive(app_handle, urls.iter().filter_map(|url| url.to_file_path().ok()));
+    }
     if let tauri::RunEvent::ExitRequested { api, code, .. } = event {
       let coordinator = app_handle.state::<QuitCoordinator>();
       let decision = coordinator.request_exit(code);
