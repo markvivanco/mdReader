@@ -905,20 +905,40 @@ function App() {
 
         <section className="content-area">
           {state.documents.length > 0 && (
-            <nav className="tabs">
+            <nav className="tabs" aria-label="Open documents">
               {state.documents.map((document) => (
-                <button key={document.path} className={`tab ${document.path === state.activePath ? 'active' : ''}`} onClick={() => void activateDocument(document.path)}>
-                  <FileText size={14} />
-                  <span>{document.name}</span>
-                  {document.content !== document.savedContent && <i />}
-                  <span
+                <div key={document.path} className={`tab ${document.path === state.activePath ? 'active' : ''}`}>
+                  <button
+                    type="button"
+                    className="tab-select"
+                    onClick={() => void activateDocument(document.path)}
+                    aria-pressed={document.path === state.activePath}
+                    aria-label={`Select ${document.name}${document.content !== document.savedContent ? ', unsaved changes' : ''}`}
+                    title={document.path}
+                  >
+                    <FileText size={14} aria-hidden="true" />
+                    <span className="tab-name">{document.name}</span>
+                    {document.content !== document.savedContent && <i aria-hidden="true" />}
+                  </button>
+                  <button
+                    type="button"
                     className={`mode-toggle${document.editing ? ' editing' : ''}`}
-                    title={`${document.editing ? 'Editing' : 'Read-only'} ${document.mode === 'preview' ? 'Preview' : 'Raw'} mode`}
+                    onClick={() => void switchDocumentMode(document.path, document.mode === 'preview' ? 'raw' : 'preview')}
+                    aria-label={`Switch ${document.name} to ${document.mode === 'preview' ? 'Raw' : 'Preview'}`}
+                    title={`Switch to ${document.mode === 'preview' ? 'Raw' : 'Preview'}`}
                   >
                     {document.mode === 'preview' ? 'Preview' : 'Raw'}
-                  </span>
-                  <X className="tab-close" size={14} onClick={(event) => { event.stopPropagation(); void closeDocument(document.path) }} />
-                </button>
+                  </button>
+                  <button
+                    type="button"
+                    className="tab-close"
+                    onClick={() => void closeDocument(document.path)}
+                    aria-label={`Close ${document.name}`}
+                    title={`Close ${document.name}`}
+                  >
+                    <X size={14} aria-hidden="true" />
+                  </button>
+                </div>
               ))}
             </nav>
           )}
